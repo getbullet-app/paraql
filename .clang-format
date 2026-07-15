@@ -1,0 +1,11 @@
+AlignAfterOpenBracket: BlockIndent
+AlignConsecutiveMacros: Consecutive
+AlignEscapedNewlines: DontAlign
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+AlwaysBreakAfterReturnType: All
+BinPackArguments: false
+BinPackParameters: false
+ContinuationIndentWidth: 2
+ColumnLimit: 0
+IncludeBlocks: Regroup
+SpaceAfterCStyleCast: true

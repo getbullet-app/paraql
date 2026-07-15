@@ -1,0 +1,40 @@
+{
+  "private": true,
+  "name": "paraql",
+  "version": "0.0.1",
+  "description": "Autobased SQLite3 experiment",
+  "author": {
+    "name": "Tomas Ravinskas",
+    "email": "tomas@tomasrav.me",
+    "url": "https://tomasrav.me/"
+  },
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "brittle-bare test/all.js"
+  },
+  "exports": {
+    "./package": "./package.json",
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "binding.c",
+    "binding.js",
+    "CMakeLists.txt",
+    "prebuilds"
+  ],
+  "addon": true,
+  "devDependencies": {
+    "brittle": "^4.0.2",
+    "cmake-bare": "^1.8.0",
+    "cmake-fetch": "^1.5.2",
+    "corestore": "^7.11.0",
+    "prettier": "^3.9.4"
+  },
+  "dependencies": {
+    "autobee": "^1.0.10",
+    "compact-encoding": "^3.3.0",
+    "index-encoder": "^3.5.0",
+    "ready-resource": "^1.2.0"
+  }
+}
