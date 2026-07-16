@@ -10,7 +10,9 @@
   },
   "license": "Apache-2.0",
   "scripts": {
-    "test": "brittle-bare test/all.js"
+    "test": "brittle-bare test/all.js",
+    "test:manual": "bare test/manual.js",
+    "bench": "brittle-bare test/bench.js"
   },
   "exports": {
     "./package": "./package.json",
@@ -25,11 +27,14 @@
   ],
   "addon": true,
   "devDependencies": {
+    "bare-fs": "^4.7.4",
+    "bare-path": "^3.1.1",
     "brittle": "^4.0.2",
     "cmake-bare": "^1.8.0",
     "cmake-fetch": "^1.5.2",
     "corestore": "^7.11.0",
-    "prettier": "^3.9.4"
+    "prettier": "^3.9.4",
+    "test-tmp": "^1.4.0"
   },
   "dependencies": {
     "autobee": "^1.0.10",
