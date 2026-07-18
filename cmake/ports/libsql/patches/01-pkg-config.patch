@@ -1,0 +1,13 @@
+diff --git a/libsql-sqlite3/configure b/libsql-sqlite3/configure
+index 0ddfa67a..c0fa86af 100755
+--- a/libsql-sqlite3/configure
++++ b/libsql-sqlite3/configure
+@@ -11888,7 +11888,7 @@ ac_config_headers="$ac_config_headers sqlite_cfg.h"
+ # Generate the output files.
+ #
+ 
+-ac_config_files="$ac_config_files Makefile sqlite3.pc"
++ac_config_files="$ac_config_files Makefile sqlite3.pc libsql.pc"
+ 
+ cat >confcache <<\_ACEOF
+ # This file is a shell script that caches the results of configure
