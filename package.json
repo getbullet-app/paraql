@@ -28,7 +28,6 @@
   "addon": true,
   "devDependencies": {
     "bare-fs": "^4.7.4",
-    "bare-path": "^3.1.1",
     "brittle": "^4.0.2",
     "cmake-bare": "^1.8.0",
     "cmake-ports": "^1.10.0",
@@ -38,8 +37,10 @@
   },
   "dependencies": {
     "autobee": "^1.0.10",
+    "bare-path": "^3.1.1",
     "compact-encoding": "^3.3.0",
     "index-encoder": "^3.5.0",
-    "ready-resource": "^1.2.0"
+    "ready-resource": "^1.2.0",
+    "rocksdb-native": "^3.17.2"
   }
 }
