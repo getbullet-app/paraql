@@ -1,6 +1,7 @@
 const ReadyResource = require("ready-resource")
 
 const binding = require("./binding")
+const errors = require("./lib/errors")
 const ParaVFS = require("./lib/vfs")
 
 module.exports = exports = class ParaQL extends ReadyResource {
@@ -12,17 +13,29 @@ module.exports = exports = class ParaQL extends ReadyResource {
 
     super()
 
-    this._handle = binding.init()
+    this._handle = null
     this._vfs = new ParaVFS(this, store, key, options)
   }
 
   async _open() {
     await this._vfs.ready()
-    await binding.open(this._handle, this._vfs._handle, "paraql.db")
+
+    try {
+      this._handle = await binding.open("paraql.db")
+    } catch (err) {
+      throw errors.from(err)
+    }
   }
 
   async _close() {
-    if (this.opened) await binding.close(this._handle)
+    if (this.opened) {
+      try {
+        await binding.close(this._handle)
+      } catch (err) {
+        throw errors.from(err)
+      }
+    }
+
     await this._vfs.close()
   }
 
@@ -54,12 +67,6 @@ module.exports = exports = class ParaQL extends ReadyResource {
     if (!this.opened) await this.ready()
 
     await this._vfs.exec(query)
-  }
-
-  async query(query) {
-    if (!this.opened) await this.ready()
-
-    return binding.exec(this._handle, query)
   }
 }
 
