@@ -2,6 +2,7 @@ const ReadyResource = require("ready-resource")
 
 const binding = require("./binding")
 const errors = require("./lib/errors")
+const ParaQLStatement = require("./lib/statement")
 const ParaVFS = require("./lib/vfs")
 
 module.exports = exports = class ParaQL extends ReadyResource {
@@ -63,10 +64,28 @@ module.exports = exports = class ParaQL extends ReadyResource {
     return this._vfs.replicate(isInitiator)
   }
 
-  async exec(query) {
+  async _exec(sql) {
+    try {
+      await binding.exec(this._handle, sql)
+    } catch (err) {
+      throw errors.from(err)
+    }
+  }
+
+  async exec(sql) {
     if (!this.opened) await this.ready()
 
-    await this._vfs.exec(query)
+    await this._vfs._exec(sql)
+  }
+
+  async prepare(sql) {
+    if (!this.opened) await this.ready()
+
+    const stmt = new ParaQLStatement(this, sql)
+
+    await stmt.ready()
+
+    return stmt
   }
 }
 

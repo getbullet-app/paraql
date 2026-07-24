@@ -3,6 +3,7 @@
 #include <js.h>
 #include <sqlite3.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,8 @@
 #include <uv.h>
 
 static const char *PARAVFS = "paravfs";
+
+static const char *STMT_FINALIZED = "Statement has already been finalized";
 
 typedef utf8_t paraql_path_t[4096];
 
@@ -98,11 +101,23 @@ typedef struct {
   int status;
 } paravfs_delete_t;
 
+typedef struct paraql_statement_s paraql_statement_t;
+
 typedef struct {
   sqlite3 *handle;
 
   js_env_t *env;
+
+  paraql_statement_t *statements;
 } paraql_t;
+
+struct paraql_statement_s {
+  sqlite3_stmt *handle;
+
+  paraql_t *db;
+  paraql_statement_t *prev;
+  paraql_statement_t *next;
+};
 
 typedef struct {
   uv_work_t handle;
@@ -112,8 +127,6 @@ typedef struct {
   js_deferred_t *deferred;
 
   paraql_path_t name;
-
-  js_ref_t *result;
 
   int errcode;
   const char *errmsg;
@@ -142,6 +155,127 @@ typedef struct {
   int errcode;
   const char *errmsg;
 } paraql_exec_t;
+
+typedef struct {
+  uv_work_t handle;
+
+  paraql_t *db;
+
+  js_deferred_t *deferred;
+
+  utf8_t *sql;
+
+  paraql_statement_t *stmt;
+
+  int errcode;
+  const char *errmsg;
+} paraql_prepare_t;
+
+typedef struct {
+  uv_work_t handle;
+
+  js_env_t *env;
+
+  js_deferred_t *deferred;
+
+  paraql_statement_t *stmt;
+} paraql_finalize_t;
+
+typedef struct {
+  uv_work_t handle;
+
+  js_env_t *env;
+
+  js_deferred_t *deferred;
+
+  paraql_statement_t *stmt;
+
+  int errcode;
+  const char *errmsg;
+} paraql_reset_t;
+
+typedef struct {
+  js_value_type_t type;
+
+  bool is_double;
+
+  union {
+    struct {
+      size_t len;
+      void *data;
+    } buffer;
+    double d;
+    int64_t i;
+  } value;
+} paraql_bind_value_t;
+
+typedef struct {
+  uv_work_t handle;
+
+  js_env_t *env;
+
+  js_deferred_t *deferred;
+
+  js_ref_t *named;
+  js_ref_t *positional;
+
+  paraql_statement_t *stmt;
+
+  int param_count;
+  const char **param_names;
+  paraql_bind_value_t **values;
+
+  int errcode;
+  const char *errmsg;
+} paraql_bind_t;
+
+typedef struct {
+  int type;
+
+  const char *name;
+
+  union {
+    struct {
+      size_t len;
+      const void *data;
+    } buffer;
+    double d;
+    int64_t i;
+  } value;
+} paraql_step_value_t;
+
+typedef struct {
+  uv_work_t handle;
+
+  js_env_t *env;
+
+  js_deferred_t *deferred;
+
+  paraql_statement_t *stmt;
+
+  bool done;
+  int count;
+  paraql_step_value_t *values;
+
+  int errcode;
+  const char *errmsg;
+} paraql_step_t;
+
+typedef struct {
+  uv_work_t handle;
+
+  js_env_t *env;
+
+  js_deferred_t *deferred;
+
+  paraql_statement_t *stmt;
+
+  int64_t changes;
+  int64_t last_insert_rowid;
+
+  int errcode;
+  const char *errmsg;
+} paraql_run_t;
 
 static const size_t paraql__queue_limit = 64;
 
@@ -915,6 +1049,53 @@ paravfs_destroy(js_env_t *env, js_callback_info_t *info) {
   return NULL;
 }
 
+static void
+paraql__insert_statement(paraql_t *db, paraql_statement_t *stmt) {
+  stmt->db = db;
+  stmt->prev = NULL;
+  stmt->next = db->statements;
+
+  if (db->statements != NULL) db->statements->prev = stmt;
+
+  db->statements = stmt;
+}
+
+static void
+paraql__remove_statement(paraql_statement_t *stmt) {
+  if (stmt->db == NULL) return;
+
+  if (stmt->prev != NULL) stmt->prev->next = stmt->next;
+  else stmt->db->statements = stmt->next;
+
+  if (stmt->next != NULL) stmt->next->prev = stmt->prev;
+
+  stmt->db = NULL;
+  stmt->prev = NULL;
+  stmt->next = NULL;
+}
+
+static void
+paraql__finalize_statements(paraql_t *db) {
+  paraql_statement_t *stmt = db->statements;
+
+  while (stmt != NULL) {
+    paraql_statement_t *next = stmt->next;
+
+    if (stmt->handle != NULL) {
+      sqlite3_finalize(stmt->handle);
+      stmt->handle = NULL;
+    }
+
+    stmt->db = NULL;
+    stmt->prev = NULL;
+    stmt->next = NULL;
+
+    stmt = next;
+  }
+
+  db->statements = NULL;
+}
+
 static const char *
 paraql__code(int errcode) {
   switch (errcode & 0xff) {
@@ -971,6 +1152,28 @@ paraql__make_error(js_env_t *env, int errcode, const char *errmsg, js_value_t **
 }
 
 static void
+paraql__on_finalize_db(js_env_t *env, void *data, void *hint) {
+  paraql_t *db = (paraql_t *) data;
+
+  paraql__finalize_statements(db);
+
+  if (db->handle != NULL) sqlite3_close_v2(db->handle);
+
+  free(db);
+}
+
+static void
+paraql__on_finalize_statement(js_env_t *env, void *data, void *hint) {
+  paraql_statement_t *stmt = (paraql_statement_t *) data;
+
+  if (stmt->handle != NULL) sqlite3_finalize(stmt->handle);
+
+  paraql__remove_statement(stmt);
+
+  free(stmt);
+}
+
+static void
 paraql__on_after_open(uv_work_t *handle, int status) {
   int err;
 
@@ -993,7 +1196,7 @@ paraql__on_after_open(uv_work_t *handle, int status) {
     assert(err == 0);
   } else {
     js_value_t *result;
-    err = js_get_reference_value(env, req->result, &result);
+    err = js_create_external(env, db, paraql__on_finalize_db, NULL, &result);
     assert(err == 0);
 
     err = js_resolve_deferred(env, req->deferred, result);
@@ -1001,9 +1204,6 @@ paraql__on_after_open(uv_work_t *handle, int status) {
   }
 
   err = js_close_handle_scope(env, scope);
-  assert(err == 0);
-
-  err = js_delete_reference(env, req->result);
   assert(err == 0);
 
   free(req);
@@ -1047,22 +1247,20 @@ paraql_open(js_env_t *env, js_callback_info_t *info) {
   err = js_get_value_string_utf8(env, argv[0], name, sizeof(name), NULL);
   assert(err == 0);
 
+  paraql_t *db = malloc(sizeof(paraql_t));
+
+  db->env = env;
+  db->statements = NULL;
+
   paraql_open_t *req = malloc(sizeof(paraql_open_t));
 
+  req->db = db;
   req->errcode = 0;
-
-  js_value_t *handle;
-
-  err = js_create_arraybuffer(env, sizeof(paraql_t), (void **) &req->db, &handle);
-  assert(err == 0);
-
   req->db->env = env;
 
   memcpy(req->name, name, sizeof(name));
 
   req->handle.data = (void *) req;
-
-  err = js_create_reference(env, handle, 1, &req->result);
 
   js_value_t *promise;
   err = js_create_promise(env, &req->deferred, &promise);
@@ -1148,7 +1346,7 @@ paraql_close(js_env_t *env, js_callback_info_t *info) {
 
   req->errcode = 0;
 
-  err = js_get_arraybuffer_info(env, argv[0], (void **) &req->db, NULL);
+  err = js_get_value_external(env, argv[0], (void **) &req->db);
   assert(err == 0);
 
   req->handle.data = (void *) req;
@@ -1184,8 +1382,7 @@ paraql__on_after_exec(uv_work_t *handle, int status) {
 
     err = js_reject_deferred(env, req->deferred, error);
     assert(err == 0);
-  }
-  {
+  } else {
     js_value_t *result;
     err = js_get_undefined(env, &result);
     assert(err == 0);
@@ -1204,7 +1401,7 @@ static void
 paraql__on_before_exec(uv_work_t *handle) {
   paraql_exec_t *req = (paraql_exec_t *) handle->data;
 
-  paraql_t *db = (paraql_t *) req->db;
+  paraql_t *db = req->db;
 
   const char *cursor = (const char *) req->sql;
 
@@ -1261,7 +1458,7 @@ paraql_exec(js_env_t *env, js_callback_info_t *info) {
   assert(err == 0);
 
   paraql_t *db;
-  err = js_get_arraybuffer_info(env, argv[0], (void **) &db, NULL);
+  err = js_get_value_external(env, argv[0], (void **) &db);
   assert(err == 0);
 
   size_t sql_len;
@@ -1270,7 +1467,7 @@ paraql_exec(js_env_t *env, js_callback_info_t *info) {
 
   sql_len += 1; // NULL
 
-  utf8_t *sql = (utf8_t *) malloc(sql_len);
+  utf8_t *sql = malloc(sql_len);
 
   err = js_get_value_string_utf8(env, argv[1], sql, sql_len, NULL);
   assert(err == 0);
@@ -1288,6 +1485,1084 @@ paraql_exec(js_env_t *env, js_callback_info_t *info) {
   assert(err == 0);
 
   err = uv_queue_work(loop, &req->handle, paraql__on_before_exec, paraql__on_after_exec);
+  assert(err == 0);
+
+  return promise;
+}
+
+static void
+paraql__on_after_prepare(uv_work_t *handle, int status) {
+  int err;
+
+  paraql_prepare_t *req = (paraql_prepare_t *) handle->data;
+
+  paraql_t *db = req->db;
+
+  js_env_t *env = db->env;
+
+  paraql_statement_t *stmt = req->stmt;
+
+  js_handle_scope_t *scope;
+  err = js_open_handle_scope(env, &scope);
+  assert(err == 0);
+
+  if (req->errcode) {
+    js_value_t *error;
+    err = paraql__make_error(env, req->errcode, req->errmsg, &error);
+    assert(err == 0);
+
+    err = js_reject_deferred(env, req->deferred, error);
+    assert(err);
+  } else {
+    js_value_t *result;
+    err = js_create_external(env, stmt, paraql__on_finalize_statement, NULL, &result);
+    assert(err == 0);
+
+    err = js_resolve_deferred(env, req->deferred, result);
+    assert(err == 0);
+  }
+
+  err = js_close_handle_scope(env, scope);
+  assert(err == 0);
+
+  free(req);
+}
+
+static void
+paraql__on_before_prepare(uv_work_t *handle) {
+  paraql_prepare_t *req = (paraql_prepare_t *) handle->data;
+
+  paraql_t *db = req->db;
+
+  paraql_statement_t *stmt = malloc(sizeof(paraql_statement_t));
+
+  int status = sqlite3_prepare_v2(db->handle, (const char *) req->sql, -1, &stmt->handle, NULL);
+
+  free(req->sql);
+
+  if (status != SQLITE_OK) {
+    req->errcode = status;
+    req->errmsg = sqlite3_errmsg(db->handle);
+
+    if (stmt->handle != NULL) sqlite3_finalize(stmt->handle);
+
+    return;
+  }
+
+  paraql__insert_statement(db, stmt);
+
+  req->stmt = stmt;
+}
+
+static js_value_t *
+paraql_prepare(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 2;
+  js_value_t *argv[2];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  assert(argc == 2);
+
+  uv_loop_t *loop;
+  err = js_get_env_loop(env, &loop);
+  assert(err == 0);
+
+  paraql_t *db;
+  err = js_get_value_external(env, argv[0], (void **) &db);
+  assert(err == 0);
+
+  size_t sql_len;
+  err = js_get_value_string_utf8(env, argv[1], NULL, 0, &sql_len);
+  assert(err == 0);
+
+  sql_len += 1;
+
+  utf8_t *sql = malloc(sql_len);
+
+  err = js_get_value_string_utf8(env, argv[1], sql, sql_len, NULL);
+  assert(err == 0);
+
+  paraql_prepare_t *req = malloc(sizeof(paraql_prepare_t));
+
+  req->errcode = 0;
+  req->db = db;
+  req->sql = sql;
+
+  req->handle.data = (void *) req;
+
+  js_value_t *promise;
+  err = js_create_promise(env, &req->deferred, &promise);
+  assert(err == 0);
+
+  err = uv_queue_work(loop, &req->handle, paraql__on_before_prepare, paraql__on_after_prepare);
+  assert(err == 0);
+
+  return promise;
+}
+
+static void
+paraql__on_after_finalize(uv_work_t *handle, int status) {
+  int err;
+
+  paraql_finalize_t *req = (paraql_finalize_t *) handle->data;
+
+  js_env_t *env = req->env;
+
+  js_handle_scope_t *scope;
+  err = js_open_handle_scope(env, &scope);
+  assert(err == 0);
+
+  js_value_t *result;
+  err = js_get_undefined(env, &result);
+  assert(err == 0);
+
+  err = js_resolve_deferred(env, req->deferred, result);
+  assert(err == 0);
+
+  err = js_close_handle_scope(env, scope);
+  assert(err == 0);
+
+  free(req);
+}
+
+static void
+paraql__on_before_finalize(uv_work_t *handle) {
+  paraql_finalize_t *req = (paraql_finalize_t *) handle->data;
+
+  paraql_statement_t *stmt = req->stmt;
+
+  if (stmt->handle != NULL) {
+    sqlite3_finalize(stmt->handle);
+    stmt->handle = NULL;
+  }
+
+  paraql__remove_statement(stmt);
+}
+
+static js_value_t *
+paraql_finalize(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 1;
+  js_value_t *argv[1];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  assert(argc == 1);
+
+  uv_loop_t *loop;
+  err = js_get_env_loop(env, &loop);
+  assert(err == 0);
+
+  paraql_statement_t *stmt;
+  err = js_get_value_external(env, argv[0], (void **) &stmt);
+  assert(err == 0);
+
+  paraql_finalize_t *req = malloc(sizeof(paraql_finalize_t));
+
+  req->env = env;
+  req->stmt = stmt;
+
+  req->handle.data = (void *) req;
+
+  js_value_t *promise;
+  err = js_create_promise(env, &req->deferred, &promise);
+  assert(err == 0);
+
+  err = uv_queue_work(loop, &req->handle, paraql__on_before_finalize, paraql__on_after_finalize);
+  assert(err == 0);
+
+  return promise;
+}
+
+static void
+paraql__on_after_reset(uv_work_t *handle, int status) {
+  int err;
+
+  paraql_reset_t *req = (paraql_reset_t *) handle->data;
+
+  js_env_t *env = req->env;
+
+  js_handle_scope_t *scope;
+  err = js_open_handle_scope(env, &scope);
+  assert(err == 0);
+
+  if (req->errcode) {
+    js_value_t *error;
+    err = paraql__make_error(env, req->errcode, req->errmsg, &error);
+    assert(err == 0);
+
+    err = js_reject_deferred(env, req->deferred, error);
+    assert(err == 0);
+  } else {
+    js_value_t *result;
+    err = js_get_undefined(env, &result);
+    assert(err == 0);
+
+    err = js_resolve_deferred(env, req->deferred, result);
+    assert(err == 0);
+  }
+
+  err = js_close_handle_scope(env, scope);
+  assert(err == 0);
+
+  free(req);
+}
+
+static void
+paraql__on_before_reset(uv_work_t *handle) {
+  paraql_reset_t *req = (paraql_reset_t *) handle->data;
+
+  paraql_statement_t *stmt = req->stmt;
+
+  if (stmt->handle != NULL) {
+    sqlite3_reset(stmt->handle);
+    sqlite3_clear_bindings(stmt->handle);
+  } else {
+    req->errcode = SQLITE_MISUSE;
+    req->errmsg = STMT_FINALIZED;
+  }
+}
+
+static js_value_t *
+paraql_reset(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 1;
+  js_value_t *argv[1];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  assert(argc == 1);
+
+  uv_loop_t *loop;
+  err = js_get_env_loop(env, &loop);
+  assert(err == 0);
+
+  paraql_statement_t *stmt;
+  err = js_get_value_external(env, argv[0], (void **) &stmt);
+  assert(err == 0);
+
+  paraql_reset_t *req = malloc(sizeof(paraql_reset_t));
+
+  req->errcode = 0;
+  req->env = env;
+  req->stmt = stmt;
+
+  req->handle.data = (void *) req;
+
+  js_value_t *promise;
+  err = js_create_promise(env, &req->deferred, &promise);
+  assert(err == 0);
+
+  err = uv_queue_work(loop, &req->handle, paraql__on_before_reset, paraql__on_after_reset);
+  assert(err == 0);
+
+  return promise;
+}
+
+paraql_bind_value_t *
+paraql__parse_value(js_env_t *env, js_value_t *value) {
+  int err;
+
+  paraql_bind_value_t *val = malloc(sizeof(paraql_bind_value_t));
+
+  js_value_type_t type;
+  err = js_typeof(env, value, &type);
+  assert(err == 0);
+
+  switch (type) {
+  case js_null:
+  case js_undefined:
+    val->type = js_null;
+    break;
+
+  case js_number: {
+    double n;
+    err = js_get_value_double(env, value, &n);
+    assert(err == 0);
+
+    int64_t i = (int64_t) n;
+
+    val->type = js_number;
+
+    if (n == (double) i) {
+      val->is_double = false;
+      val->value.i = i;
+    } else {
+      val->is_double = true;
+      val->value.d = n;
+    }
+    break;
+  }
+
+  case js_bigint: {
+    int64_t n;
+    bool lossless;
+    err = js_get_value_bigint_int64(env, value, &n, &lossless);
+    assert(err == 0);
+
+    val->type = js_bigint;
+    val->value.i = n;
+  }
+
+  case js_string: {
+    size_t len;
+    err = js_get_value_string_utf8(env, value, NULL, 0, &len);
+    assert(err == 0);
+
+    utf8_t *str = malloc(len + 1);
+
+    err = js_get_value_string_utf8(env, value, str, len + 1, NULL);
+    assert(err == 0);
+
+    val->type = js_string;
+    val->value.buffer.data = (void *) str;
+    val->value.buffer.len = len;
+    break;
+  }
+
+  case js_object: {
+    bool is_typedarray;
+    err = js_is_typedarray(env, value, &is_typedarray);
+    assert(err == 0);
+
+    if (is_typedarray) {
+      void *data;
+      size_t len;
+      err = js_get_typedarray_info(env, value, NULL, &data, &len, NULL, NULL);
+      assert(err == 0);
+
+      val->type = js_object;
+      val->value.buffer.data = data;
+      val->value.buffer.len = len;
+      break;
+    }
+
+    bool is_arraybuffer;
+    err = js_is_arraybuffer(env, value, &is_arraybuffer);
+    assert(err == 0);
+
+    if (is_arraybuffer) {
+      void *data;
+      size_t len;
+      err = js_get_arraybuffer_info(env, value, &data, &len);
+      assert(err == 0);
+
+      val->type = js_object;
+      val->value.buffer.data = data;
+      val->value.buffer.len = len;
+      break;
+    }
+
+    return NULL;
+  }
+
+  default:
+    return NULL;
+  }
+
+  return val;
+}
+
+static void
+paraql__cancel_bind(js_env_t *env, js_handle_scope_t *scope, paraql_bind_t *req, int index, const char *errmsg) {
+  int err;
+
+  free(req->param_names);
+
+  for (int i = 0; i < index; i++) {
+    paraql_bind_value_t *value = req->values[i];
+
+    if (value->type == js_string) {
+      free(value->value.buffer.data);
+    }
+
+    free(value);
+  }
+
+  free(req->values);
+
+  js_value_t *message;
+  err = js_create_string_utf8(env, (utf8_t *) errmsg, -1, &message);
+  assert(err == 0);
+
+  js_value_t *error;
+  err = js_create_type_error(env, NULL, message, &error);
+  assert(err == 0);
+
+  err = js_reject_deferred(env, req->deferred, error);
+  assert(err == 0);
+
+  err = js_close_handle_scope(env, scope);
+  assert(err == 0);
+
+  free(req);
+}
+
+static void
+paraql__free_bind_values(paraql_bind_t *req, int start) {
+  for (int i = start; i < req->param_count; i++) {
+    paraql_bind_value_t *value = req->values[i];
+
+    if (value->type == js_string) {
+      free(value->value.buffer.data);
+    }
+
+    free(value);
+  }
+}
+
+static void
+paraql__on_after_bind(uv_work_t *handle, int status) {
+  int err;
+
+  paraql_bind_t *req = (paraql_bind_t *) handle->data;
+
+  js_env_t *env = req->env;
+
+  js_handle_scope_t *scope;
+  err = js_open_handle_scope(env, &scope);
+  assert(err == 0);
+
+  err = js_delete_reference(env, req->named);
+  assert(err == 0);
+
+  err = js_delete_reference(env, req->positional);
+  assert(err == 0);
+
+  if (req->errcode) {
+    js_value_t *error;
+    err = paraql__make_error(env, req->errcode, req->errmsg, &error);
+    assert(err == 0);
+
+    err = js_reject_deferred(env, req->deferred, error);
+    assert(err);
+  } else {
+    js_value_t *result;
+    err = js_get_undefined(env, &result);
+    assert(err == 0);
+
+    err = js_resolve_deferred(env, req->deferred, result);
+    assert(err == 0);
+  }
+
+  err = js_close_handle_scope(env, scope);
+  assert(err == 0);
+
+  free(req);
+}
+
+static void
+paraql__on_before_bind(uv_work_t *handle) {
+  int status;
+
+  paraql_bind_t *req = (paraql_bind_t *) handle->data;
+
+  paraql_statement_t *stmt = req->stmt;
+
+  if (stmt->handle != NULL) {
+    for (int i = 1; i <= req->param_count; i++) {
+      paraql_bind_value_t *value = req->values[i - 1];
+
+      switch (value->type) {
+      case js_null:
+      case js_undefined:
+        status = sqlite3_bind_null(stmt->handle, i);
+        break;
+
+      case js_number:
+        if (value->is_double) {
+          status = sqlite3_bind_double(stmt->handle, i, value->value.d);
+        } else {
+          status = sqlite3_bind_int64(stmt->handle, i, value->value.i);
+        }
+        break;
+
+      case js_bigint:
+        status = sqlite3_bind_int64(stmt->handle, i, value->value.i);
+        break;
+
+      case js_string:
+        status = sqlite3_bind_text(stmt->handle, i, (const char *) value->value.buffer.data, (int) value->value.buffer.len, SQLITE_TRANSIENT);
+        free(value->value.buffer.data);
+        break;
+
+      case js_object:
+        status = sqlite3_bind_blob(stmt->handle, i, value->value.buffer.data, (int) value->value.buffer.len, SQLITE_TRANSIENT);
+        break;
+
+      default:
+        break;
+      }
+
+      free(value);
+
+      if (status != SQLITE_OK) {
+        req->errcode = status;
+        req->errmsg = sqlite3_errmsg(stmt->db->handle);
+
+        paraql__free_bind_values(req, i);
+
+        free(req->values);
+
+        return;
+      }
+    }
+  } else {
+    req->errcode = SQLITE_MISUSE;
+    req->errmsg = STMT_FINALIZED;
+
+    paraql__free_bind_values(req, 0);
+  }
+
+  free(req->values);
+}
+
+static void
+paraql__on_after_parse(uv_work_t *handle, int status) {
+  int err;
+
+  paraql_bind_t *req = (paraql_bind_t *) handle->data;
+
+  js_env_t *env = req->env;
+
+  js_handle_scope_t *scope;
+  err = js_open_handle_scope(env, &scope);
+  assert(err == 0);
+
+  if (req->errcode) {
+    err = js_delete_reference(env, req->named);
+    assert(err == 0);
+
+    err = js_delete_reference(env, req->positional);
+    assert(err == 0);
+
+    js_value_t *error;
+    err = paraql__make_error(env, req->errcode, req->errmsg, &error);
+    assert(err == 0);
+
+    err = js_reject_deferred(env, req->deferred, error);
+    assert(err == 0);
+
+    free(req);
+  } else {
+    js_value_t *named;
+    err = js_get_reference_value(env, req->named, &named);
+    assert(err == 0);
+
+    js_value_t *positional;
+    err = js_get_reference_value(env, req->positional, &positional);
+    assert(err == 0);
+
+    uint32_t pos_len;
+    err = js_get_array_length(env, positional, &pos_len);
+    assert(err == 0);
+
+    js_value_type_t named_type;
+    err = js_typeof(env, named, &named_type);
+    assert(err == 0);
+
+    bool has_named = named_type == js_object;
+
+    uint32_t pos_idx = 0;
+
+    for (int i = 0; i < req->param_count; i++) {
+      const char *name = req->param_names[i];
+
+      if (name == NULL) {
+        if (pos_idx >= pos_len) {
+          return paraql__cancel_bind(env, scope, req, i, "Missing positional parameter");
+        }
+
+        js_value_t *value;
+        err = js_get_element(env, positional, pos_idx++, &value);
+        assert(err == 0);
+
+        paraql_bind_value_t *val = paraql__parse_value(env, value);
+
+        if (val == NULL) {
+          return paraql__cancel_bind(env, scope, req, i, "Unsupported parameter type");
+        }
+
+        req->values[i] = val;
+
+        continue;
+      }
+
+      if (!has_named) {
+        return paraql__cancel_bind(env, scope, req, i, "Missing named parameters object");
+      }
+
+      bool found;
+      err = js_has_named_property(env, named, name, &found);
+      assert(err == 0);
+
+      const char *key = name;
+
+      if (!found) {
+        err = js_has_named_property(env, named, name + 1, &found);
+        assert(err == 0);
+
+        if (found) key = name + 1;
+      }
+
+      if (!found) {
+        return paraql__cancel_bind(env, scope, req, i, "Missing named parameter");
+      }
+
+      js_value_t *value;
+      err = js_get_named_property(env, named, key, &value);
+      assert(err == 0);
+
+      paraql_bind_value_t *val = paraql__parse_value(env, value);
+
+      if (val == NULL) {
+        return paraql__cancel_bind(env, scope, req, i, "Unsupported parameter type");
+      }
+
+      req->values[i] = val;
+    }
+
+    if (pos_idx < pos_len) {
+      return paraql__cancel_bind(env, scope, req, req->param_count, "Too many positional parameters");
+    }
+
+    if (has_named) {
+      js_value_t *keys;
+      err = js_get_property_names(env, named, &keys);
+      assert(err == 0);
+
+      uint32_t keys_len;
+      err = js_get_array_length(env, keys, &keys_len);
+      assert(err == 0);
+
+      for (uint32_t k = 0; k < keys_len; k++) {
+        js_value_t *key_value;
+        err = js_get_element(env, keys, k, &key_value);
+        assert(err == 0);
+
+        utf8_t key[256];
+        err = js_get_value_string_utf8(env, key_value, key, sizeof(key), NULL);
+        assert(err == 0);
+
+        bool known = false;
+
+        for (int i = 0; i < req->param_count; i++) {
+          const char *name = req->param_names[i];
+
+          if (name == NULL) continue;
+
+          if (strcmp(name, (const char *) key) == 0) {
+            known = true;
+            break;
+          }
+
+          if (strcmp(name + 1, (const char *) key) == 0) {
+            known = true;
+            break;
+          }
+        }
+
+        if (!known) {
+          return paraql__cancel_bind(env, scope, req, req->param_count, "Unknown named parameter");
+        }
+      }
+    }
+
+    free(req->param_names);
+
+    uv_loop_t *loop;
+    err = js_get_env_loop(env, &loop);
+    assert(err == 0);
+
+    err = uv_queue_work(loop, &req->handle, paraql__on_before_bind, paraql__on_after_bind);
+    assert(err == 0);
+  }
+
+  err = js_close_handle_scope(env, scope);
+  assert(err == 0);
+}
+
+static void
+paraql__on_before_parse(uv_work_t *handle) {
+  paraql_bind_t *req = (paraql_bind_t *) handle->data;
+
+  paraql_statement_t *stmt = req->stmt;
+
+  if (stmt->handle == NULL) {
+    req->errcode = SQLITE_MISUSE;
+    return;
+  }
+
+  if (stmt->handle != NULL) {
+    sqlite3_reset(stmt->handle);
+    sqlite3_clear_bindings(stmt->handle);
+
+    req->param_count = sqlite3_bind_parameter_count(stmt->handle);
+    req->param_names = malloc(sizeof(char *) * req->param_count);
+    req->values = malloc(sizeof(paraql_bind_value_t *) * req->param_count);
+
+    for (int i = 1; i <= req->param_count; i++) {
+      req->param_names[i - 1] = sqlite3_bind_parameter_name(stmt->handle, i);
+    }
+  } else {
+    req->errcode = SQLITE_MISUSE;
+    req->errmsg = STMT_FINALIZED;
+  }
+}
+
+static js_value_t *
+paraql_bind(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 3;
+  js_value_t *argv[3];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  assert(argc == 3);
+
+  uv_loop_t *loop;
+  err = js_get_env_loop(env, &loop);
+  assert(err == 0);
+
+  paraql_statement_t *stmt;
+  err = js_get_value_external(env, argv[0], (void **) &stmt);
+  assert(err == 0);
+
+  js_ref_t *named;
+  err = js_create_reference(env, argv[1], 1, &named);
+  assert(err == 0);
+
+  js_ref_t *positional;
+  err = js_create_reference(env, argv[2], 1, &positional);
+  assert(err == 0);
+
+  paraql_bind_t *req = malloc(sizeof(paraql_bind_t));
+
+  req->errcode = 0;
+  req->env = env;
+  req->stmt = stmt;
+  req->named = named;
+  req->positional = positional;
+
+  req->handle.data = (void *) req;
+
+  js_value_t *promise;
+  err = js_create_promise(env, &req->deferred, &promise);
+  assert(err == 0);
+
+  err = uv_queue_work(loop, &req->handle, paraql__on_before_parse, paraql__on_after_parse);
+  assert(err == 0);
+
+  return promise;
+}
+
+static void
+paraql__on_after_step(uv_work_t *handle, int status) {
+  int err;
+
+  paraql_step_t *req = (paraql_step_t *) handle->data;
+
+  js_env_t *env = req->env;
+
+  js_handle_scope_t *scope;
+  err = js_open_handle_scope(env, &scope);
+  assert(err == 0);
+
+  if (req->errcode) {
+    js_value_t *error;
+    err = paraql__make_error(env, req->errcode, req->errmsg, &error);
+    assert(err == 0);
+
+    err = js_reject_deferred(env, req->deferred, error);
+    assert(err == 0);
+  } else if (req->done) {
+    js_value_t *result;
+    err = js_get_undefined(env, &result);
+    assert(err == 0);
+
+    err = js_resolve_deferred(env, req->deferred, result);
+    assert(err == 0);
+  } else {
+    js_value_t *row;
+    err = js_create_object(env, &row);
+    assert(err == 0);
+
+    for (int i = 0; i < req->count; i++) {
+      paraql_step_value_t val = req->values[i];
+
+      js_value_t *value;
+
+      switch (val.type) {
+      case SQLITE_INTEGER:
+        err = js_create_int64(env, val.value.i, &value);
+        assert(err == 0);
+        break;
+
+      case SQLITE_FLOAT:
+        err = js_create_double(env, val.value.d, &value);
+        assert(err == 0);
+        break;
+
+      case SQLITE_TEXT:
+        err = js_create_string_utf8(env, (const utf8_t *) val.value.buffer.data, val.value.buffer.len, &value);
+        assert(err == 0);
+        break;
+
+      case SQLITE_BLOB: {
+        void *buf;
+        err = js_create_arraybuffer(env, val.value.buffer.len, &buf, &value);
+        assert(err == 0);
+
+        if (val.value.buffer.len > 0) memcpy(buf, val.value.buffer.data, val.value.buffer.len);
+        break;
+      }
+
+      case SQLITE_NULL:
+      default:
+        err = js_get_null(env, &value);
+        assert(err == 0);
+      }
+
+      err = js_set_named_property(env, row, val.name, value);
+      assert(err == 0);
+    }
+
+    err = js_resolve_deferred(env, req->deferred, row);
+    assert(err == 0);
+
+    free(req->values);
+  }
+
+  err = js_close_handle_scope(env, scope);
+  assert(err == 0);
+
+  free(req);
+}
+
+static void
+paraql__on_before_step(uv_work_t *handle) {
+  int status;
+
+  paraql_step_t *req = (paraql_step_t *) handle->data;
+
+  paraql_statement_t *stmt = req->stmt;
+
+  if (stmt->handle != NULL) {
+    status = sqlite3_step(stmt->handle);
+
+    if (status == SQLITE_ROW) {
+      int n = sqlite3_column_count(stmt->handle);
+
+      req->done = false;
+      req->count = n;
+      req->values = malloc(sizeof(paraql_step_value_t) * n);
+
+      for (int i = 0; i < n; i++) {
+        req->values[i].name = sqlite3_column_name(stmt->handle, i);
+
+        switch (sqlite3_column_type(stmt->handle, i)) {
+        case SQLITE_INTEGER: {
+          req->values[i].type = SQLITE_INTEGER;
+          req->values[i].value.i = sqlite3_column_int64(stmt->handle, i);
+          break;
+        }
+
+        case SQLITE_FLOAT: {
+          req->values[i].type = SQLITE_FLOAT;
+          req->values[i].value.d = sqlite3_column_double(stmt->handle, i);
+          break;
+        }
+
+        case SQLITE_TEXT: {
+          req->values[i].type = SQLITE_TEXT;
+          req->values[i].value.buffer.data = (const void *) sqlite3_column_text(stmt->handle, i);
+          req->values[i].value.buffer.len = sqlite3_column_bytes(stmt->handle, i);
+          break;
+        }
+
+        case SQLITE_BLOB: {
+          req->values[i].type = SQLITE_BLOB;
+          req->values[i].value.buffer.data = sqlite3_column_blob(stmt->handle, i);
+          req->values[i].value.buffer.len = sqlite3_column_bytes(stmt->handle, i);
+          break;
+        }
+
+        case SQLITE_NULL:
+        default:
+          req->values[i].type = SQLITE_NULL;
+        }
+      }
+
+      return;
+    }
+
+    if (status == SQLITE_DONE) {
+      req->done = true;
+      return;
+    }
+
+    req->errcode = status;
+    req->errmsg = sqlite3_errmsg(stmt->db->handle);
+  } else {
+    req->errcode = SQLITE_MISUSE;
+    req->errmsg = STMT_FINALIZED;
+  }
+}
+
+static js_value_t *
+paraql_step(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 1;
+  js_value_t *argv[1];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  assert(argc == 1);
+
+  uv_loop_t *loop;
+  err = js_get_env_loop(env, &loop);
+  assert(err == 0);
+
+  paraql_statement_t *stmt;
+  err = js_get_value_external(env, argv[0], (void **) &stmt);
+  assert(err == 0);
+
+  paraql_step_t *req = malloc(sizeof(paraql_step_t));
+
+  req->errcode = 0;
+  req->env = env;
+  req->stmt = stmt;
+
+  req->handle.data = (void *) req;
+
+  js_value_t *promise;
+  err = js_create_promise(env, &req->deferred, &promise);
+  assert(err == 0);
+
+  err = uv_queue_work(loop, &req->handle, paraql__on_before_step, paraql__on_after_step);
+  assert(err == 0);
+
+  return promise;
+}
+
+static void
+paraql__on_after_run(uv_work_t *handle, int status) {
+  int err;
+
+  paraql_run_t *req = (paraql_run_t *) handle->data;
+
+  js_env_t *env = req->env;
+
+  js_handle_scope_t *scope;
+  err = js_open_handle_scope(env, &scope);
+  assert(err == 0);
+
+  if (req->errcode) {
+    js_value_t *error;
+    err = paraql__make_error(env, req->errcode, req->errmsg, &error);
+    assert(err == 0);
+
+    err = js_reject_deferred(env, req->deferred, error);
+    assert(err == 0);
+  } else {
+    js_value_t *result;
+    err = js_create_object(env, &result);
+    assert(err == 0);
+
+    js_value_t *changes;
+    err = js_create_int64(env, req->changes, &changes);
+    assert(err == 0);
+
+    err = js_set_named_property(env, result, "changes", changes);
+    assert(err == 0);
+
+    js_value_t *last_insert_rowid;
+    err = js_create_int64(env, req->last_insert_rowid, &last_insert_rowid);
+    assert(err == 0);
+
+    err = js_set_named_property(env, result, "lastInsertRowid", last_insert_rowid);
+    assert(err == 0);
+
+    err = js_resolve_deferred(env, req->deferred, result);
+    assert(err == 0);
+  }
+
+  err = js_close_handle_scope(env, scope);
+  assert(err == 0);
+
+  free(req);
+}
+
+static void
+paraql__on_before_run(uv_work_t *handle) {
+  int status;
+
+  paraql_run_t *req = (paraql_run_t *) handle->data;
+
+  paraql_statement_t *stmt = req->stmt;
+
+  if (stmt->handle != NULL) {
+    while ((status = sqlite3_step(stmt->handle)) == SQLITE_ROW) {
+    }
+
+    if (status != SQLITE_DONE) {
+      req->errcode = status;
+      req->errmsg = sqlite3_errmsg(stmt->db->handle);
+      return;
+    }
+
+    req->changes = sqlite3_changes64(stmt->db->handle);
+    req->last_insert_rowid = sqlite3_last_insert_rowid(stmt->db->handle);
+  } else {
+    req->errcode = SQLITE_MISUSE;
+    req->errmsg = STMT_FINALIZED;
+  }
+}
+
+static js_value_t *
+paraql_run(js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  size_t argc = 1;
+  js_value_t *argv[1];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
+  assert(err == 0);
+
+  assert(argc == 1);
+
+  uv_loop_t *loop;
+  err = js_get_env_loop(env, &loop);
+  assert(err == 0);
+
+  paraql_statement_t *stmt;
+  err = js_get_value_external(env, argv[0], (void **) &stmt);
+  assert(err == 0);
+
+  paraql_run_t *req = malloc(sizeof(paraql_run_t));
+
+  req->errcode = 0;
+  req->env = env;
+  req->stmt = stmt;
+
+  req->handle.data = (void *) req;
+
+  js_value_t *promise;
+  err = js_create_promise(env, &req->deferred, &promise);
+  assert(err == 0);
+
+  err = uv_queue_work(loop, &req->handle, paraql__on_before_run, paraql__on_after_run);
   assert(err == 0);
 
   return promise;
@@ -1312,6 +2587,12 @@ paraql_exports(js_env_t *env, js_value_t *exports) {
   V("open", paraql_open)
   V("close", paraql_close)
   V("exec", paraql_exec)
+  V("prepare", paraql_prepare)
+  V("finalize", paraql_finalize)
+  V("reset", paraql_reset)
+  V("bind", paraql_bind)
+  V("step", paraql_step)
+  V("run", paraql_run)
 #undef V
 
   return exports;
