@@ -1152,8 +1152,13 @@ paraql__make_error(js_env_t *env, int errcode, const char *errmsg, js_value_t **
 }
 
 static void
-paraql__on_finalize_db(js_env_t *env, void *data, void *hint) {
-  paraql_t *db = (paraql_t *) data;
+paraql__on_after_finalize_db(uv_work_t *handle, int status) {
+  free(handle);
+}
+
+static void
+paraql__on_before_finalize_db(uv_work_t *handle) {
+  paraql_t *db = (paraql_t *) handle->data;
 
   paraql__finalize_statements(db);
 
@@ -1163,14 +1168,55 @@ paraql__on_finalize_db(js_env_t *env, void *data, void *hint) {
 }
 
 static void
-paraql__on_finalize_statement(js_env_t *env, void *data, void *hint) {
-  paraql_statement_t *stmt = (paraql_statement_t *) data;
+paraql__on_finalize_db(js_env_t *env, void *data, void *hint) {
+  int err;
+
+  paraql_t *db = (paraql_t *) data;
+
+  uv_loop_t *loop;
+  err = js_get_env_loop(env, &loop);
+  assert(err == 0);
+
+  uv_work_t *handle = malloc(sizeof(uv_work_t));
+
+  handle->data = (void *) db;
+
+  err = uv_queue_work(loop, handle, paraql__on_before_finalize_db, paraql__on_after_finalize_db);
+  assert(err == 0);
+}
+
+static void
+paraql__on_after_finalize_statement(uv_work_t *handle, int status) {
+  free(handle);
+}
+
+static void
+paraql__on_before_finalize_statement(uv_work_t *handle) {
+  paraql_statement_t *stmt = (paraql_statement_t *) handle->data;
 
   if (stmt->handle != NULL) sqlite3_finalize(stmt->handle);
 
   paraql__remove_statement(stmt);
 
   free(stmt);
+}
+
+static void
+paraql__on_finalize_statement(js_env_t *env, void *data, void *hint) {
+  int err;
+
+  paraql_statement_t *stmt = (paraql_statement_t *) data;
+
+  uv_loop_t *loop;
+  err = js_get_env_loop(env, &loop);
+  assert(err == 0);
+
+  uv_work_t *handle = malloc(sizeof(uv_work_t));
+
+  handle->data = stmt;
+
+  err = uv_queue_work(loop, handle, paraql__on_before_finalize_statement, paraql__on_after_finalize_statement);
+  assert(err == 0);
 }
 
 static void
