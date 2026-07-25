@@ -12,10 +12,14 @@ module.exports = exports = class ParaQL extends ReadyResource {
       key = null
     }
 
+    const { cacheSize = 1024, ...opts } = options
+
     super()
 
     this._handle = null
-    this._vfs = new ParaVFS(this, store, key, options)
+    this._vfs = new ParaVFS(this, store, key, opts)
+    this._cacheSize = cacheSize
+    this._cache = new Map()
   }
 
   async _open() {
@@ -31,6 +35,11 @@ module.exports = exports = class ParaQL extends ReadyResource {
   async _close() {
     if (this.opened) {
       try {
+        for (const stmt of this._cache.values()) {
+          await stmt.finalize()
+        }
+
+        this._cache.clear()
         await binding.close(this._handle)
       } catch (err) {
         throw errors.from(err)
@@ -81,9 +90,25 @@ module.exports = exports = class ParaQL extends ReadyResource {
   async prepare(sql) {
     if (!this.opened) await this.ready()
 
-    const stmt = new ParaQLStatement(this, sql)
+    let stmt = this._cache.get(sql)
+
+    if (stmt) {
+      this._cache.delete(sql)
+      this._cache.set(sql, stmt)
+      return stmt
+    }
+
+    stmt = new ParaQLStatement(this, sql)
 
     await stmt.ready()
+
+    this._cache.set(sql, stmt)
+
+    if (this._cache.size > this._cacheSize) {
+      const oldest = this._cache.values().next().value
+
+      await oldest.finalize()
+    }
 
     return stmt
   }
