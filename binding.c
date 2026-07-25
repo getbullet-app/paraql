@@ -1558,7 +1558,7 @@ paraql__on_after_prepare(uv_work_t *handle, int status) {
     assert(err == 0);
 
     err = js_reject_deferred(env, req->deferred, error);
-    assert(err);
+    assert(err == 0);
   } else {
     js_value_t *result;
     err = js_create_external(env, stmt, paraql__on_finalize_statement, NULL, &result);
@@ -1988,7 +1988,7 @@ paraql__on_after_bind(uv_work_t *handle, int status) {
     assert(err == 0);
 
     err = js_reject_deferred(env, req->deferred, error);
-    assert(err);
+    assert(err == 0);
   } else {
     js_value_t *result;
     err = js_get_undefined(env, &result);
