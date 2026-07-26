@@ -5,20 +5,54 @@ const tmp = require("test-tmp")
 
 const ParaQL = require("../..")
 
-async function inserts(n) {
-  const fixture = await fs.readFile(
+const BENCH_ROWS = 2_500
+
+async function dump(n) {
+  const data = await fs.readFile(
     path.resolve(__dirname, "../fixtures/sqlite-2500-insertions.txt"),
     "utf-8",
   )
-  const lines = fixture.split("\n")
-  const chunkSize = Math.ceil(lines.length / n)
+  const rows = data.split("\n")
+  const chunkSize = Math.ceil(rows.length / n)
   const chunks = []
 
-  for (let i = 0; i < lines.length; i += chunkSize) {
-    chunks.push(lines.slice(i, i + chunkSize).join("\n"))
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    chunks.push(rows.slice(i, i + chunkSize).join("\n"))
   }
 
   return chunks
+}
+
+async function inserts(n) {
+  const rows = []
+
+  for (let i = 0; i < BENCH_ROWS; i++) {
+    rows.push([i, unistr(4), unistr(16)])
+  }
+
+  const chunkSize = Math.ceil(BENCH_ROWS / n)
+  const chunks = []
+
+  for (let i = 0; i < BENCH_ROWS; i += chunkSize) {
+    chunks.push(rows.slice(i, i + chunkSize))
+  }
+
+  return chunks
+}
+
+function random(n) {
+  return Math.floor(Math.random() * n)
+}
+
+function unistr(n) {
+  const length = Math.ceil(n / 2)
+  const buffer = []
+
+  for (let i = 0; i < length; i++) {
+    buffer.push(random(256))
+  }
+
+  return Buffer.from(buffer).toString("hex").slice(0, n)
 }
 
 async function create(n, t, options = {}) {
@@ -168,11 +202,15 @@ function formatTime(timestamp) {
 }
 
 module.exports = {
+  BENCH_ROWS,
   create,
   dirSize,
+  dump,
   formatTime,
   inserts,
+  random,
   replicate,
   replicateAndSync,
   sync,
+  unistr,
 }

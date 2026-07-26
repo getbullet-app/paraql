@@ -1,7 +1,9 @@
 const test = require("brittle")
 const {
+  BENCH_ROWS,
   create,
   dirSize,
+  dump,
   formatTime,
   inserts,
   replicate,
@@ -16,43 +18,20 @@ test.configure({
   bail: true,
 })
 
-test("single-writer", async (t) => {
-  const [data] = await inserts(1)
-  const rows = data.split("\n").length
+const WRITERS = 3
+const RUNS = 3
+const TABLE =
+  "CREATE TABLE pts1 ('I' SMALLINT NOT NULL, 'DT' TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, 'F1' VARCHAR(4) NOT NULL, 'F2' VARCHAR(16) NOT NULL);"
+const INSERT = "INSERT INTO 'pts1' ('I', 'DT', 'F1', 'F2') VALUES (?, CURRENT_TIMESTAMP, ?, ?);"
+
+test("single-writer exec", async (t) => {
+  const [data] = await dump(1)
   const results = []
 
-  {
+  for (let i = 0; i < RUNS; i++) {
     const [paraql] = await create(1, t)
 
-    await paraql.exec(
-      "CREATE TABLE pts1 ('I' SMALLINT NOT NULL, 'DT' TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, 'F1' VARCHAR(4) NOT NULL, 'F2' VARCHAR(16) NOT NULL);",
-    )
-
-    results.push(await t.execution(() => paraql.exec(data)))
-
-    const usage = await dirSize(paraql._vfs.store.storage.path)
-
-    t.comment(`Used ${usage} of storage space`)
-  }
-  {
-    const [paraql] = await create(1, t)
-
-    await paraql.exec(
-      "CREATE TABLE pts1 ('I' SMALLINT NOT NULL, 'DT' TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, 'F1' VARCHAR(4) NOT NULL, 'F2' VARCHAR(16) NOT NULL);",
-    )
-
-    results.push(await t.execution(() => paraql.exec(data)))
-
-    const usage = await dirSize(paraql._vfs.store.storage.path)
-
-    t.comment(`Used ${usage} of storage space`)
-  }
-  {
-    const [paraql] = await create(1, t)
-
-    await paraql.exec(
-      "CREATE TABLE pts1 ('I' SMALLINT NOT NULL, 'DT' TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, 'F1' VARCHAR(4) NOT NULL, 'F2' VARCHAR(16) NOT NULL);",
-    )
+    await paraql.exec(TABLE)
 
     results.push(await t.execution(() => paraql.exec(data)))
 
@@ -64,81 +43,63 @@ test("single-writer", async (t) => {
   const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
   const deviation = Math.max(...results) - Math.min(...results)
 
-  t.comment(`Inserted ${rows} rows in ~${formatTime(average)} (±${formatTime(deviation)})`)
+  t.comment(
+    `Inserted ${BENCH_ROWS} rows in ~${formatTime(average)} (±${formatTime(deviation)})`,
+  )
+})
+
+test("single-writer prepare", async (t) => {
+  const [data] = await inserts(1)
+  const results = []
+
+  for (let i = 0; i < RUNS; i++) {
+    const [paraql] = await create(1, t)
+
+    await paraql.exec(TABLE)
+
+    results.push(
+      await t.execution(async () => {
+        const stmt = await paraql.prepare(INSERT)
+
+        for (const row of data) {
+          await stmt.run(...row)
+        }
+      }),
+    )
+
+    const usage = await dirSize(paraql._vfs.store.storage.path)
+
+    t.comment(`Used ${usage} of storage space`)
+  }
+
+  const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
+  const deviation = Math.max(...results) - Math.min(...results)
+
+  t.comment(
+    `Inserted ${BENCH_ROWS} rows in ~${formatTime(average)} (±${formatTime(deviation)})`,
+  )
 })
 
 test("multi-writer concurrent", async (t) => {
-  const n = 3
-  const data = await inserts(n)
-  const rows = data.join("\n").split("\n").length
+  const data = await inserts(WRITERS)
   const results = []
 
-  {
-    const paras = await create(n, t)
+  for (let i = 0; i < RUNS; i++) {
+    const paras = await create(WRITERS, t)
 
     t.teardown(replicate(...paras))
 
-    await paras[0].exec(
-      "CREATE TABLE pts1 ('I' SMALLINT NOT NULL, 'DT' TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, 'F1' VARCHAR(4) NOT NULL, 'F2' VARCHAR(16) NOT NULL);",
-    )
+    await paras[0].exec(TABLE)
     await sync(...paras)
 
     results.push(
       await t.execution(async () => {
-        for (let i = 0; i < n; i++) {
-          await paras[i].exec(data[i])
-        }
+        for (let i = 0; i < paras.length; i++) {
+          const stmt = await paras[i].prepare(INSERT)
 
-        await sync(...paras)
-      }),
-    )
-
-    for (let i = 0; i < paras.length; i++) {
-      const usage = await dirSize(paras[i]._vfs.store.storage.path)
-
-      t.comment(`Instance ${i} used ${usage} of storage space`)
-    }
-  }
-  {
-    const paras = await create(n, t)
-
-    t.teardown(replicate(...paras))
-
-    await paras[0].exec(
-      "CREATE TABLE pts1 ('I' SMALLINT NOT NULL, 'DT' TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, 'F1' VARCHAR(4) NOT NULL, 'F2' VARCHAR(16) NOT NULL);",
-    )
-    await sync(...paras)
-
-    results.push(
-      await t.execution(async () => {
-        for (let i = 0; i < n; i++) {
-          await paras[i].exec(data[i])
-        }
-
-        await sync(...paras)
-      }),
-    )
-
-    for (let i = 0; i < paras.length; i++) {
-      const usage = await dirSize(paras[i]._vfs.store.storage.path)
-
-      t.comment(`Instance ${i} used ${usage} of storage space`)
-    }
-  }
-  {
-    const paras = await create(n, t)
-
-    t.teardown(replicate(...paras))
-
-    await paras[0].exec(
-      "CREATE TABLE pts1 ('I' SMALLINT NOT NULL, 'DT' TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, 'F1' VARCHAR(4) NOT NULL, 'F2' VARCHAR(16) NOT NULL);",
-    )
-    await sync(...paras)
-
-    results.push(
-      await t.execution(async () => {
-        for (let i = 0; i < n; i++) {
-          await paras[i].exec(data[i])
+          for (const row of data[i]) {
+            await stmt.run(...row)
+          }
         }
 
         await sync(...paras)
@@ -156,66 +117,26 @@ test("multi-writer concurrent", async (t) => {
   const deviation = Math.max(...results) - Math.min(...results)
 
   t.comment(
-    `Inserted ${rows} rows from ${n} writers in ~${formatTime(average)} (±${formatTime(deviation)})`,
+    `Inserted ${BENCH_ROWS} rows from ${WRITERS} writers in ~${formatTime(average)} (±${formatTime(deviation)})`,
   )
 })
 
 test("multi-writer sync", async (t) => {
-  const n = 3
-  const data = await inserts(n)
-  const rows = data.join("\n").split("\n").length
+  const data = await inserts(WRITERS)
   const results = []
 
-  {
-    const paras = await create(n, t)
+  for (let i = 0; i < RUNS; i++) {
+    const paras = await create(WRITERS, t)
 
-    await paras[0].exec(
-      "CREATE TABLE pts1 ('I' SMALLINT NOT NULL, 'DT' TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, 'F1' VARCHAR(4) NOT NULL, 'F2' VARCHAR(16) NOT NULL);",
-    )
+    await paras[0].exec(TABLE)
     await replicateAndSync(...paras)
-
-    for (let i = 0; i < n; i++) {
-      await paras[i].exec(data[i])
-    }
-
-    results.push(await t.execution(() => replicateAndSync(...paras)))
 
     for (let i = 0; i < paras.length; i++) {
-      const usage = await dirSize(paras[i]._vfs.store.storage.path)
+      const stmt = await paras[i].prepare(INSERT)
 
-      t.comment(`Instance ${i} used ${usage} of storage space`)
-    }
-  }
-  {
-    const paras = await create(n, t)
-
-    await paras[0].exec(
-      "CREATE TABLE pts1 ('I' SMALLINT NOT NULL, 'DT' TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, 'F1' VARCHAR(4) NOT NULL, 'F2' VARCHAR(16) NOT NULL);",
-    )
-    await replicateAndSync(...paras)
-
-    for (let i = 0; i < n; i++) {
-      await paras[i].exec(data[i])
-    }
-
-    results.push(await t.execution(() => replicateAndSync(...paras)))
-
-    for (let i = 0; i < paras.length; i++) {
-      const usage = await dirSize(paras[i]._vfs.store.storage.path)
-
-      t.comment(`Instance ${i} used ${usage} of storage space`)
-    }
-  }
-  {
-    const paras = await create(n, t)
-
-    await paras[0].exec(
-      "CREATE TABLE pts1 ('I' SMALLINT NOT NULL, 'DT' TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, 'F1' VARCHAR(4) NOT NULL, 'F2' VARCHAR(16) NOT NULL);",
-    )
-    await replicateAndSync(...paras)
-
-    for (let i = 0; i < n; i++) {
-      await paras[i].exec(data[i])
+      for (const row of data[i]) {
+        await stmt.run(...row)
+      }
     }
 
     results.push(await t.execution(() => replicateAndSync(...paras)))
@@ -231,84 +152,28 @@ test("multi-writer sync", async (t) => {
   const deviation = Math.max(...results) - Math.min(...results)
 
   t.comment(
-    `Synced ${rows} rows between ${n} writers in ~${formatTime(average)} (±${formatTime(deviation)})`,
+    `Synced ${BENCH_ROWS} rows between ${WRITERS} writers in ~${formatTime(average)} (±${formatTime(deviation)})`,
   )
 })
 
 test("multi-writer fast-forward", async (t) => {
-  const n = 3
   const data = await inserts(n)
-  const rows = data.join("\n").split("\n").length
   const results = []
 
-  {
-    const paras = await create(n + 1, t)
+  for (let i = 0; i < RUNS; i++) {
+    const paras = await create(WRITERS + 1, t)
     const reader = paras.pop()
     const done = replicate(...paras)
 
-    await paras[0].exec(
-      "CREATE TABLE pts1 ('I' SMALLINT NOT NULL, 'DT' TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, 'F1' VARCHAR(4) NOT NULL, 'F2' VARCHAR(16) NOT NULL);",
-    )
+    await paras[0].exec(TABLE)
     await sync(...paras)
-
-    for (let i = 0; i < n; i++) {
-      await paras[i].exec(data[i])
-    }
-
-    await done()
-
-    results.push(await t.execution(() => replicateAndSync(...paras, reader)))
 
     for (let i = 0; i < paras.length; i++) {
-      const usage = await dirSize(paras[i]._vfs.store.storage.path)
+      const stmt = await paras[i].prepare(INSERT)
 
-      t.comment(`Instance ${i} used ${usage} of storage space`)
-    }
-
-    const usage = await dirSize(reader._vfs.store.storage.path)
-
-    t.comment(`Instance ${paras.length} (reader) used ${usage} of storage space`)
-  }
-  {
-    const paras = await create(n + 1, t)
-    const reader = paras.pop()
-    const done = replicate(...paras)
-
-    await paras[0].exec(
-      "CREATE TABLE pts1 ('I' SMALLINT NOT NULL, 'DT' TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, 'F1' VARCHAR(4) NOT NULL, 'F2' VARCHAR(16) NOT NULL);",
-    )
-    await sync(...paras)
-
-    for (let i = 0; i < n; i++) {
-      await paras[i].exec(data[i])
-    }
-
-    await done()
-
-    results.push(await t.execution(() => replicateAndSync(...paras, reader)))
-
-    for (let i = 0; i < paras.length; i++) {
-      const usage = await dirSize(paras[i]._vfs.store.storage.path)
-
-      t.comment(`Instance ${i} used ${usage} of storage space`)
-    }
-
-    const usage = await dirSize(reader._vfs.store.storage.path)
-
-    t.comment(`Instance ${paras.length} (reader) used ${usage} of storage space`)
-  }
-  {
-    const paras = await create(n + 1, t)
-    const reader = paras.pop()
-    const done = replicate(...paras)
-
-    await paras[0].exec(
-      "CREATE TABLE pts1 ('I' SMALLINT NOT NULL, 'DT' TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, 'F1' VARCHAR(4) NOT NULL, 'F2' VARCHAR(16) NOT NULL);",
-    )
-    await sync(...paras)
-
-    for (let i = 0; i < n; i++) {
-      await paras[i].exec(data[i])
+      for (const row of data[i]) {
+        await stmt.run(...row)
+      }
     }
 
     await done()
@@ -330,6 +195,6 @@ test("multi-writer fast-forward", async (t) => {
   const deviation = Math.max(...results) - Math.min(...results)
 
   t.comment(
-    `Synced ${rows} rows from ${n} writers in ~${formatTime(average)} (±${formatTime(deviation)})`,
+    `Synced ${BENCH_ROWS} rows from ${WRITERS} writers in ~${formatTime(average)} (±${formatTime(deviation)})`,
   )
 })

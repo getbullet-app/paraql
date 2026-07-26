@@ -1,1 +1,5 @@
+require("./basic")
+require("./exec")
+require("./stmt")
+require("./sqlite")
 require("./vector")
