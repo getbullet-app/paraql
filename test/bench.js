@@ -60,9 +60,13 @@ test("single-writer prepare", async (t) => {
       await t.execution(async () => {
         const stmt = await paraql.prepare(INSERT)
 
+        stmt.batch(true)
+
         for (const row of data) {
           await stmt.run(...row)
         }
+
+        await stmt.flush()
       }),
     )
 
@@ -96,9 +100,13 @@ test("multi-writer concurrent", async (t) => {
         for (let i = 0; i < paras.length; i++) {
           const stmt = await paras[i].prepare(INSERT)
 
+          stmt.batch(true)
+
           for (const row of data[i]) {
             await stmt.run(...row)
           }
+
+          await stmt.flush()
         }
 
         await sync(...paras)
@@ -133,9 +141,13 @@ test("multi-writer sync", async (t) => {
     for (let i = 0; i < paras.length; i++) {
       const stmt = await paras[i].prepare(INSERT)
 
+      stmt.batch(true)
+
       for (const row of data[i]) {
         await stmt.run(...row)
       }
+
+      await stmt.flush()
     }
 
     results.push(await t.execution(() => replicateAndSync(...paras)))
@@ -156,7 +168,7 @@ test("multi-writer sync", async (t) => {
 })
 
 test("multi-writer fast-forward", async (t) => {
-  const data = await inserts(n)
+  const data = await inserts(WRITERS)
   const results = []
 
   for (let i = 0; i < RUNS; i++) {
@@ -170,9 +182,13 @@ test("multi-writer fast-forward", async (t) => {
     for (let i = 0; i < paras.length; i++) {
       const stmt = await paras[i].prepare(INSERT)
 
+      stmt.batch(true)
+
       for (const row of data[i]) {
         await stmt.run(...row)
       }
+
+      await stmt.flush()
     }
 
     await done()
