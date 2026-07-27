@@ -1,5 +1,6 @@
-require("./basic")
+require("./open")
 require("./exec")
 require("./stmt")
 require("./sqlite")
 require("./vector")
+require("./base")

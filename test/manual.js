@@ -1,10 +1,6 @@
 const fs = require("bare-fs/promises")
 const { create } = require("./helpers")
 
-const TABLE =
-  "CREATE TABLE pts1 ('I' SMALLINT NOT NULL, 'DT' VARCHAR(4) NOT NULL, 'F1' VARCHAR(4) NOT NULL, 'F2' VARCHAR(16) NOT NULL);"
-const INSERT = "INSERT INTO 'pts1' ('I', 'DT', 'F1', 'F2') VALUES (?, 'ABCD', ?, ?);"
-
 ;(async () => {
   const [paraql] = await create(1)
 

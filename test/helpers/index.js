@@ -3,9 +3,8 @@ const fs = require("bare-fs/promises")
 const path = require("bare-path")
 const tmp = require("test-tmp")
 
+const { BENCH_ROWS } = require("./constants")
 const ParaQL = require("../..")
-
-const BENCH_ROWS = 2_500
 
 async function dump(n) {
   const data = await fs.readFile(

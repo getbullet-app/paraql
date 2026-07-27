@@ -1,4 +1,6 @@
 const test = require("brittle")
+
+const { INSERT, TABLE } = require("./helpers/constants")
 const {
   BENCH_ROWS,
   create,
@@ -20,9 +22,6 @@ test.configure({
 
 const WRITERS = 3
 const RUNS = 3
-const TABLE =
-  "CREATE TABLE pts1 ('I' SMALLINT NOT NULL, 'DT' TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, 'F1' VARCHAR(4) NOT NULL, 'F2' VARCHAR(16) NOT NULL);"
-const INSERT = "INSERT INTO 'pts1' ('I', 'DT', 'F1', 'F2') VALUES (?, CURRENT_TIMESTAMP, ?, ?);"
 
 test("single-writer exec", async (t) => {
   const [data] = await dump(1)
