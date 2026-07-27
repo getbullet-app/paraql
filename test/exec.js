@@ -39,7 +39,7 @@ test("exec discards rows from SELECT", async (t) => {
   t.is(result, undefined)
 })
 
-test.skip("exec propagates errors from latter statements", async (t) => {
+test("exec propagates errors from latter statements", async (t) => {
   t.plan(2)
 
   const [paraql] = await create(1, t)
