@@ -5,10 +5,13 @@ const { create } = require("./helpers")
   const [paraql] = await create(1)
 
   try {
+    const stmt = await paraql.prepare("SELECT 1")
+
     await paraql.close()
 
     try {
-      await paraql.exec("SELECT 1")
+      const r = await stmt.get()
+      console.log(r)
     } catch (err) {
       console.log(err)
     }
