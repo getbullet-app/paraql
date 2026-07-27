@@ -56,14 +56,14 @@ test("exec propagates errors from latter statements", async (t) => {
   t.is(row.name, "t")
 })
 
-test.skip("exec on closed database throws", async (t) => {
+test("exec on closed database throws", async (t) => {
   t.plan(1)
 
   const [paraql] = await create(1, t)
 
   await paraql.close()
 
-  await t.exception(paraql.exec("SELECT 1"), /DATABASE_NOT_OPEN/)
+  await t.exception(paraql.exec("SELECT 1"), /ALREADY_CLOSED/)
 })
 
 test("exec on invalid SQL throws", async (t) => {

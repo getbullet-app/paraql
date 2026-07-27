@@ -84,11 +84,15 @@ module.exports = exports = class ParaQL extends ReadyResource {
   async exec(sql) {
     if (!this.opened) await this.ready()
 
+    if (this.closed) throw errors.ALREADY_CLOSED()
+
     await this._vfs._exec(sql)
   }
 
   async prepare(sql) {
     if (!this.opened) await this.ready()
+
+    if (this.closed) throw errors.ALREADY_CLOSED()
 
     let stmt = this._cache.get(sql)
 
