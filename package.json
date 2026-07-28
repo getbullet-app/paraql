@@ -42,6 +42,7 @@
     "compact-encoding": "^3.3.0",
     "index-encoder": "^3.5.0",
     "ready-resource": "^1.2.0",
-    "rocksdb-native": "^3.17.2"
+    "rocksdb-native": "^3.17.2",
+    "sodium-native": "^5.1.0"
   }
 }

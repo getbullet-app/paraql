@@ -39,8 +39,16 @@ module.exports = exports = class ParaQL extends ReadyResource {
     return this._vfs.discoveryKey
   }
 
+  get encryptionKey() {
+    return this._vfs.encryptionKey
+  }
+
   get writable() {
     return this._vfs.writable
+  }
+
+  get encrypted() {
+    return this._vfs.encrypted
   }
 
   async _open() {

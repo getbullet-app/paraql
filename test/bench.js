@@ -75,6 +75,39 @@ test("single-writer prepare", async (t) => {
   )
 })
 
+test("single-writer encryption", async (t) => {
+  const encryptionKey = Buffer.alloc(32, 13)
+  const [data] = await inserts(1)
+  const results = []
+
+  for (let i = 0; i < RUNS; i++) {
+    const [paraql] = await create(1, t, { encrypted: true, encryptionKey })
+
+    await paraql.exec(TABLE)
+
+    results.push(
+      await t.execution(async () => {
+        const stmt = await paraql.prepare(INSERT)
+
+        stmt.batch(true)
+
+        for (const row of data) {
+          await stmt.run(...row)
+        }
+
+        await stmt.flush()
+      }),
+    )
+  }
+
+  const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
+  const deviation = Math.max(...results) - Math.min(...results)
+
+  t.comment(
+    `Inserted ${BENCH_ROWS} rows in ~${formatTime(average)} (±${formatTime(deviation)})`,
+  )
+})
+
 test("single-writer compact", async (t) => {
   const [data] = await inserts(1)
   const results = []
