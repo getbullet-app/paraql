@@ -4,6 +4,28 @@ const Corestore = require("corestore")
 const { create, replicateAndSync } = require("./helpers")
 const ParaQL = require("..")
 
+test("writable", async (t) => {
+  t.plan(6)
+
+  const [a, b] = await create(2, t)
+  const store = new Corestore(await t.tmp())
+  const c = new ParaQL(store, a.key)
+
+  await c.ready()
+
+  t.teardown(() => c.close())
+
+  t.ok(a.writable)
+  t.absent(b.writable)
+  t.absent(c.writable)
+
+  await replicateAndSync(a, b, c)
+
+  t.ok(a.writable)
+  t.ok(b.writable)
+  t.absent(c.writable)
+})
+
 test("replication", async (t) => {
   t.plan(1)
 

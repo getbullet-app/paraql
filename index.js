@@ -22,6 +22,26 @@ module.exports = exports = class ParaQL extends ReadyResource {
     this._cache = new Map()
   }
 
+  get name() {
+    return this._vfs.name
+  }
+
+  get key() {
+    return this._vfs.key
+  }
+
+  get local() {
+    return this._vfs.local
+  }
+
+  get discoveryKey() {
+    return this._vfs.discoveryKey
+  }
+
+  get writable() {
+    return this._vfs.writable
+  }
+
   async _open() {
     await this._vfs.ready()
 
@@ -47,18 +67,6 @@ module.exports = exports = class ParaQL extends ReadyResource {
     }
 
     await this._vfs.close()
-  }
-
-  get key() {
-    return this._vfs.key
-  }
-
-  get local() {
-    return this._vfs.local
-  }
-
-  get discoveryKey() {
-    return this._vfs.discoveryKey
   }
 
   async addWriter(key) {
@@ -90,7 +98,7 @@ module.exports = exports = class ParaQL extends ReadyResource {
 
     if (this.closed) throw errors.ALREADY_CLOSED()
 
-    await this._vfs._exec(sql)
+    await this._vfs.exec(sql)
   }
 
   async prepare(sql) {
