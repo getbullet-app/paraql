@@ -33,10 +33,6 @@ test("single-writer exec", async (t) => {
     await paraql.exec(TABLE)
 
     results.push(await t.execution(() => paraql.exec(data)))
-
-    const usage = await dirSize(paraql._vfs.store.storage.path)
-
-    t.comment(`Used ${usage} of storage space`)
   }
 
   const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
@@ -69,10 +65,6 @@ test("single-writer prepare", async (t) => {
         await stmt.flush()
       }),
     )
-
-    const usage = await dirSize(paraql._vfs.store.storage.path)
-
-    t.comment(`Used ${usage} of storage space`)
   }
 
   const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
@@ -81,6 +73,35 @@ test("single-writer prepare", async (t) => {
   t.comment(
     `Inserted ${BENCH_ROWS} rows in ~${formatTime(average)} (±${formatTime(deviation)})`,
   )
+})
+
+test("single-writer compact", async (t) => {
+  const [data] = await inserts(1)
+  const results = []
+
+  for (let i = 0; i < RUNS; i++) {
+    const [paraql] = await create(1, t)
+
+    await paraql.exec(TABLE)
+
+    const stmt = await paraql.prepare(INSERT)
+
+    stmt.batch(true)
+
+    for (const row of data) {
+      await stmt.run(...row)
+    }
+
+    await stmt.flush()
+
+    const before = await dirSize(paraql._vfs.store.storage.path)
+    const time = await t.execution(() => paraql.compact())
+    const after = await dirSize(paraql._vfs.store.storage.path)
+
+    t.comment(
+      `Compacted ${BENCH_ROWS} rows in ${formatTime(time)} using ${after} (${before} before compaction)`,
+    )
+  }
 })
 
 test("multi-writer concurrent", async (t) => {
@@ -112,12 +133,6 @@ test("multi-writer concurrent", async (t) => {
         await sync(...paras)
       }),
     )
-
-    for (let i = 0; i < paras.length; i++) {
-      const usage = await dirSize(paras[i]._vfs.store.storage.path)
-
-      t.comment(`Instance ${i} used ${usage} of storage space`)
-    }
   }
 
   const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
@@ -151,12 +166,6 @@ test("multi-writer sync", async (t) => {
     }
 
     results.push(await t.execution(() => replicateAndSync(...paras)))
-
-    for (let i = 0; i < paras.length; i++) {
-      const usage = await dirSize(paras[i]._vfs.store.storage.path)
-
-      t.comment(`Instance ${i} used ${usage} of storage space`)
-    }
   }
 
   const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
@@ -194,16 +203,6 @@ test("multi-writer fast-forward", async (t) => {
     await done()
 
     results.push(await t.execution(() => replicateAndSync(...paras, reader)))
-
-    for (let i = 0; i < paras.length; i++) {
-      const usage = await dirSize(paras[i]._vfs.store.storage.path)
-
-      t.comment(`Instance ${i} used ${usage} of storage space`)
-    }
-
-    const usage = await dirSize(reader._vfs.store.storage.path)
-
-    t.comment(`Instance ${paras.length} (reader) used ${usage} of storage space`)
   }
 
   const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
