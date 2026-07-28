@@ -1,4 +1,5 @@
 const test = require("brittle")
+const Buffer = require("bare-buffer")
 
 const { create } = require("./helpers")
 const ParaQLError = require("../lib/errors")

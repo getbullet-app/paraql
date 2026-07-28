@@ -1,3 +1,4 @@
+const Buffer = require("bare-buffer")
 const ReadyResource = require("ready-resource")
 
 const binding = require("./binding")

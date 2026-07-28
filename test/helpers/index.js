@@ -1,3 +1,4 @@
+const Buffer = require("bare-buffer")
 const Corestore = require("corestore")
 const fs = require("bare-fs/promises")
 const path = require("bare-path")
