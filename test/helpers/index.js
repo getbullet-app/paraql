@@ -154,22 +154,6 @@ async function replicateAndSync(...paras) {
   await done()
 }
 
-async function dirSize(dir) {
-  let bytes = 0
-
-  for (const file of await fs.readdir(dir, { recursive: true })) {
-    try {
-      const stat = await fs.stat(path.resolve(dir, file))
-
-      bytes += stat.size
-    } catch (err) {
-      console.error(`Error reading ${path.join(dir, file)}: ${err.message}`)
-    }
-  }
-
-  return bytes
-}
-
 function formatSize(bytes) {
   const unit = 1024
 
@@ -209,7 +193,6 @@ function formatTime(timestamp) {
 module.exports = {
   BENCH_ROWS,
   create,
-  dirSize,
   dump,
   formatSize,
   formatTime,

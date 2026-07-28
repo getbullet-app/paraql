@@ -3,61 +3,32 @@ const fs = require("bare-fs/promises")
 const tmp = require("test-tmp")
 
 const ParaQL = require("..")
-const { create, dirSize, inserts, replicateAndSync } = require("./helpers")
+const { create, formatSize, inserts } = require("./helpers")
 const { INSERT, TABLE } = require("./helpers/constants")
 
 ;(async () => {
-  const n = 3
-  const data = await inserts(n)
-  const paras = await create(n)
+  const [data] = await inserts(1)
+  const [paraql] = await create(1)
 
-  await paras[0].exec(TABLE)
-  await replicateAndSync(...paras)
+  await paraql.exec(TABLE)
 
-  for (let i = 0; i < paras.length; i++) {
-    const stmt = await paras[i].prepare(INSERT)
+  const stmt = await paraql.prepare(INSERT)
 
-    stmt.batch(true)
+  stmt.batch(true)
 
-    for (const row of data[i]) {
-      await stmt.run(...row)
-    }
-
-    await stmt.flush()
-    await replicateAndSync(...paras)
+  for (const row of data) {
+    await stmt.run(...row)
   }
 
-  for (let i = 0; i < paras.length; i++) {
-    const beforeTotal = await dirSize(paras[i]._vfs.store.storage.path)
-    const beforeTmp = await dirSize(`${paras[i]._vfs.store.storage.path}/paraql.db`)
+  await stmt.flush()
 
-    console.log(`Instance ${i} before compact ${beforeTotal} (${beforeTmp})`)
+  const info = await paraql.info()
 
-    await paras[i]._vfs.compact()
-
-    const afterTotal = await dirSize(paras[i]._vfs.store.storage.path)
-    const afterTmp = await dirSize(`${paras[i]._vfs.store.storage.path}/paraql.db`)
-
-    console.log(`Instance ${i} after compact ${afterTotal} (${afterTmp})`)
+  for (key in info) {
+    info[key] = formatSize(info[key])
   }
 
-  for (const p of paras) {
-    const input = data.flat(1)
-    const select = await p.prepare("SELECT I, F1, F2 FROM pts1 ORDER BY I")
-    const rows = await select.all()
+  console.log(info)
 
-    for (let i = 0; i < rows.length; i++) {
-      if (
-        input[i][0] !== rows[i].I
-        || input[i][1] !== rows[i].F1
-        || input[i][2] !== rows[i].F2
-      ) {
-        console.log(`FUCK ${i}`)
-      }
-    }
-  }
-
-  for (const p of paras) {
-    await p.close()
-  }
+  await paraql.close()
 })()

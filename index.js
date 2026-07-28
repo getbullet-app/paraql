@@ -94,6 +94,10 @@ module.exports = exports = class ParaQL extends ReadyResource {
     return this._vfs.compact()
   }
 
+  async info() {
+    return this._vfs.info()
+  }
+
   async _exec(sql) {
     try {
       await binding.exec(this._handle, sql)

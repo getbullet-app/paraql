@@ -4,7 +4,6 @@ const { INSERT, TABLE } = require("./helpers/constants")
 const {
   BENCH_ROWS,
   create,
-  dirSize,
   dump,
   formatSize,
   formatTime,
@@ -37,9 +36,9 @@ test("single-writer exec", async (t) => {
     await paraql.exec(TABLE)
 
     results.push(await t.execution(() => paraql.exec(data)))
-    before.push(await dirSize(paraql._vfs.store.storage.path))
+    before.push((await paraql.info()).total)
     compact.push(await t.execution(() => paraql.compact()))
-    after.push(await dirSize(paraql._vfs.store.storage.path))
+    after.push((await paraql.info()).total)
   }
 
   const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
@@ -82,9 +81,9 @@ test("single-writer prepare", async (t) => {
         await stmt.flush()
       }),
     )
-    before.push(await dirSize(paraql._vfs.store.storage.path))
+    before.push((await paraql.info()).total)
     compact.push(await t.execution(() => paraql.compact()))
-    after.push(await dirSize(paraql._vfs.store.storage.path))
+    after.push((await paraql.info()).total)
   }
 
   const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
@@ -128,9 +127,9 @@ test("single-writer encryption", async (t) => {
         await stmt.flush()
       }),
     )
-    before.push(await dirSize(paraql._vfs.store.storage.path))
+    before.push((await paraql.info()).total)
     compact.push(await t.execution(() => paraql.compact()))
-    after.push(await dirSize(paraql._vfs.store.storage.path))
+    after.push((await paraql.info()).total)
   }
 
   const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
@@ -173,9 +172,9 @@ test("single-writer compression", async (t) => {
         await stmt.flush()
       }),
     )
-    before.push(await dirSize(paraql._vfs.store.storage.path))
+    before.push((await paraql.info()).total)
     compact.push(await t.execution(() => paraql.compact()))
-    after.push(await dirSize(paraql._vfs.store.storage.path))
+    after.push((await paraql.info()).total)
   }
 
   const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
@@ -218,9 +217,9 @@ test("single-writer max compression", async (t) => {
         await stmt.flush()
       }),
     )
-    before.push(await dirSize(paraql._vfs.store.storage.path))
+    before.push((await paraql.info()).total)
     compact.push(await t.execution(() => paraql.compact()))
-    after.push(await dirSize(paraql._vfs.store.storage.path))
+    after.push((await paraql.info()).total)
   }
 
   const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
@@ -264,9 +263,9 @@ test("single-writer compression + encryption", async (t) => {
         await stmt.flush()
       }),
     )
-    before.push(await dirSize(paraql._vfs.store.storage.path))
+    before.push((await paraql.info()).total)
     compact.push(await t.execution(() => paraql.compact()))
-    after.push(await dirSize(paraql._vfs.store.storage.path))
+    after.push((await paraql.info()).total)
   }
 
   const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
