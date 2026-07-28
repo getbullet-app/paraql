@@ -6,6 +6,7 @@ const {
   create,
   dirSize,
   dump,
+  formatSize,
   formatTime,
   inserts,
   replicate,
@@ -26,6 +27,9 @@ const RUNS = 3
 test("single-writer exec", async (t) => {
   const [data] = await dump(1)
   const results = []
+  const before = []
+  const compact = []
+  const after = []
 
   for (let i = 0; i < RUNS; i++) {
     const [paraql] = await create(1, t)
@@ -33,19 +37,32 @@ test("single-writer exec", async (t) => {
     await paraql.exec(TABLE)
 
     results.push(await t.execution(() => paraql.exec(data)))
+    before.push(await dirSize(paraql._vfs.store.storage.path))
+    compact.push(await t.execution(() => paraql.compact()))
+    after.push(await dirSize(paraql._vfs.store.storage.path))
   }
 
   const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
   const deviation = Math.max(...results) - Math.min(...results)
+  const compactAverage = Math.ceil(compact.reduce((i, s) => s + i, 0) / compact.length)
+  const compactDeviation = Math.max(...compact) - Math.min(...compact)
+  const beforeAverage = Math.ceil(before.reduce((i, s) => s + i, 0) / before.length)
+  const afterAverage = Math.ceil(after.reduce((i, s) => s + i, 0) / after.length)
 
   t.comment(
     `Inserted ${BENCH_ROWS} rows in ~${formatTime(average)} (±${formatTime(deviation)})`,
+  )
+  t.comment(
+    `Compacted in ~${formatTime(compactAverage)} (±${formatTime(compactDeviation)}) using ~${formatSize(afterAverage)} (~${formatSize(beforeAverage)} before compaction)`,
   )
 })
 
 test("single-writer prepare", async (t) => {
   const [data] = await inserts(1)
   const results = []
+  const before = []
+  const compact = []
+  const after = []
 
   for (let i = 0; i < RUNS; i++) {
     const [paraql] = await create(1, t)
@@ -65,13 +82,23 @@ test("single-writer prepare", async (t) => {
         await stmt.flush()
       }),
     )
+    before.push(await dirSize(paraql._vfs.store.storage.path))
+    compact.push(await t.execution(() => paraql.compact()))
+    after.push(await dirSize(paraql._vfs.store.storage.path))
   }
 
   const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
   const deviation = Math.max(...results) - Math.min(...results)
+  const compactAverage = Math.ceil(compact.reduce((i, s) => s + i, 0) / compact.length)
+  const compactDeviation = Math.max(...compact) - Math.min(...compact)
+  const beforeAverage = Math.ceil(before.reduce((i, s) => s + i, 0) / before.length)
+  const afterAverage = Math.ceil(after.reduce((i, s) => s + i, 0) / after.length)
 
   t.comment(
     `Inserted ${BENCH_ROWS} rows in ~${formatTime(average)} (±${formatTime(deviation)})`,
+  )
+  t.comment(
+    `Compacted in ~${formatTime(compactAverage)} (±${formatTime(compactDeviation)}) using ~${formatSize(afterAverage)} (~${formatSize(beforeAverage)} before compaction)`,
   )
 })
 
@@ -79,6 +106,9 @@ test("single-writer encryption", async (t) => {
   const encryptionKey = Buffer.alloc(32, 13)
   const [data] = await inserts(1)
   const results = []
+  const before = []
+  const compact = []
+  const after = []
 
   for (let i = 0; i < RUNS; i++) {
     const [paraql] = await create(1, t, { encrypted: true, encryptionKey })
@@ -98,43 +128,160 @@ test("single-writer encryption", async (t) => {
         await stmt.flush()
       }),
     )
+    before.push(await dirSize(paraql._vfs.store.storage.path))
+    compact.push(await t.execution(() => paraql.compact()))
+    after.push(await dirSize(paraql._vfs.store.storage.path))
   }
 
   const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
   const deviation = Math.max(...results) - Math.min(...results)
+  const compactAverage = Math.ceil(compact.reduce((i, s) => s + i, 0) / compact.length)
+  const compactDeviation = Math.max(...compact) - Math.min(...compact)
+  const beforeAverage = Math.ceil(before.reduce((i, s) => s + i, 0) / before.length)
+  const afterAverage = Math.ceil(after.reduce((i, s) => s + i, 0) / after.length)
 
   t.comment(
     `Inserted ${BENCH_ROWS} rows in ~${formatTime(average)} (±${formatTime(deviation)})`,
   )
+  t.comment(
+    `Compacted in ~${formatTime(compactAverage)} (±${formatTime(compactDeviation)}) using ~${formatSize(afterAverage)} (~${formatSize(beforeAverage)} before compaction)`,
+  )
 })
 
-test("single-writer compact", async (t) => {
+test("single-writer compression", async (t) => {
   const [data] = await inserts(1)
   const results = []
+  const before = []
+  const compact = []
+  const after = []
 
   for (let i = 0; i < RUNS; i++) {
-    const [paraql] = await create(1, t)
+    const [paraql] = await create(1, t, { compressed: true })
 
     await paraql.exec(TABLE)
 
-    const stmt = await paraql.prepare(INSERT)
+    results.push(
+      await t.execution(async () => {
+        const stmt = await paraql.prepare(INSERT)
 
-    stmt.batch(true)
+        stmt.batch(true)
 
-    for (const row of data) {
-      await stmt.run(...row)
-    }
+        for (const row of data) {
+          await stmt.run(...row)
+        }
 
-    await stmt.flush()
-
-    const before = await dirSize(paraql._vfs.store.storage.path)
-    const time = await t.execution(() => paraql.compact())
-    const after = await dirSize(paraql._vfs.store.storage.path)
-
-    t.comment(
-      `Compacted ${BENCH_ROWS} rows in ${formatTime(time)} using ${after} (${before} before compaction)`,
+        await stmt.flush()
+      }),
     )
+    before.push(await dirSize(paraql._vfs.store.storage.path))
+    compact.push(await t.execution(() => paraql.compact()))
+    after.push(await dirSize(paraql._vfs.store.storage.path))
   }
+
+  const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
+  const deviation = Math.max(...results) - Math.min(...results)
+  const compactAverage = Math.ceil(compact.reduce((i, s) => s + i, 0) / compact.length)
+  const compactDeviation = Math.max(...compact) - Math.min(...compact)
+  const beforeAverage = Math.ceil(before.reduce((i, s) => s + i, 0) / before.length)
+  const afterAverage = Math.ceil(after.reduce((i, s) => s + i, 0) / after.length)
+
+  t.comment(
+    `Inserted ${BENCH_ROWS} rows in ~${formatTime(average)} (±${formatTime(deviation)})`,
+  )
+  t.comment(
+    `Compacted in ~${formatTime(compactAverage)} (±${formatTime(compactDeviation)}) using ~${formatSize(afterAverage)} (~${formatSize(beforeAverage)} before compaction)`,
+  )
+})
+
+test("single-writer max compression", async (t) => {
+  const [data] = await inserts(1)
+  const results = []
+  const before = []
+  const compact = []
+  const after = []
+
+  for (let i = 0; i < RUNS; i++) {
+    const [paraql] = await create(1, t, { compressed: true, compressionLevel: 9 })
+
+    await paraql.exec(TABLE)
+
+    results.push(
+      await t.execution(async () => {
+        const stmt = await paraql.prepare(INSERT)
+
+        stmt.batch(true)
+
+        for (const row of data) {
+          await stmt.run(...row)
+        }
+
+        await stmt.flush()
+      }),
+    )
+    before.push(await dirSize(paraql._vfs.store.storage.path))
+    compact.push(await t.execution(() => paraql.compact()))
+    after.push(await dirSize(paraql._vfs.store.storage.path))
+  }
+
+  const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
+  const deviation = Math.max(...results) - Math.min(...results)
+  const compactAverage = Math.ceil(compact.reduce((i, s) => s + i, 0) / compact.length)
+  const compactDeviation = Math.max(...compact) - Math.min(...compact)
+  const beforeAverage = Math.ceil(before.reduce((i, s) => s + i, 0) / before.length)
+  const afterAverage = Math.ceil(after.reduce((i, s) => s + i, 0) / after.length)
+
+  t.comment(
+    `Inserted ${BENCH_ROWS} rows in ~${formatTime(average)} (±${formatTime(deviation)})`,
+  )
+  t.comment(
+    `Compacted in ~${formatTime(compactAverage)} (±${formatTime(compactDeviation)}) using ~${formatSize(afterAverage)} (~${formatSize(beforeAverage)} before compaction)`,
+  )
+})
+
+test("single-writer compression + encryption", async (t) => {
+  const encryptionKey = Buffer.alloc(32, 13)
+  const [data] = await inserts(1)
+  const results = []
+  const before = []
+  const compact = []
+  const after = []
+
+  for (let i = 0; i < RUNS; i++) {
+    const [paraql] = await create(1, t, { encrypted: true, encryptionKey, compressed: true })
+
+    await paraql.exec(TABLE)
+
+    results.push(
+      await t.execution(async () => {
+        const stmt = await paraql.prepare(INSERT)
+
+        stmt.batch(true)
+
+        for (const row of data) {
+          await stmt.run(...row)
+        }
+
+        await stmt.flush()
+      }),
+    )
+    before.push(await dirSize(paraql._vfs.store.storage.path))
+    compact.push(await t.execution(() => paraql.compact()))
+    after.push(await dirSize(paraql._vfs.store.storage.path))
+  }
+
+  const average = Math.ceil(results.reduce((i, s) => s + i, 0) / results.length)
+  const deviation = Math.max(...results) - Math.min(...results)
+  const compactAverage = Math.ceil(compact.reduce((i, s) => s + i, 0) / compact.length)
+  const compactDeviation = Math.max(...compact) - Math.min(...compact)
+  const beforeAverage = Math.ceil(before.reduce((i, s) => s + i, 0) / before.length)
+  const afterAverage = Math.ceil(after.reduce((i, s) => s + i, 0) / after.length)
+
+  t.comment(
+    `Inserted ${BENCH_ROWS} rows in ~${formatTime(average)} (±${formatTime(deviation)})`,
+  )
+  t.comment(
+    `Compacted in ~${formatTime(compactAverage)} (±${formatTime(compactDeviation)}) using ~${formatSize(afterAverage)} (~${formatSize(beforeAverage)} before compaction)`,
+  )
 })
 
 test("multi-writer concurrent", async (t) => {

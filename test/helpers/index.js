@@ -155,7 +155,6 @@ async function replicateAndSync(...paras) {
 }
 
 async function dirSize(dir) {
-  const unit = 1024
   let bytes = 0
 
   for (const file of await fs.readdir(dir, { recursive: true })) {
@@ -167,6 +166,12 @@ async function dirSize(dir) {
       console.error(`Error reading ${path.join(dir, file)}: ${err.message}`)
     }
   }
+
+  return bytes
+}
+
+function formatSize(bytes) {
+  const unit = 1024
 
   const exp = Math.floor(Math.log(bytes) / Math.log(unit))
   const pre = " " + "kMGTPE".charAt(exp - 1) + "B"
@@ -206,6 +211,7 @@ module.exports = {
   create,
   dirSize,
   dump,
+  formatSize,
   formatTime,
   inserts,
   random,
