@@ -1,4 +1,5 @@
 const test = require("brittle")
+const Corestore = require("corestore")
 
 const { INSERT, TABLE } = require("./helpers/constants")
 const {
@@ -12,6 +13,7 @@ const {
   replicateAndSync,
   sync,
 } = require("./helpers")
+const ParaQL = require("..")
 
 test.configure({
   // benchmark is only run manually, so allow for large timeout to get accurate results
@@ -360,8 +362,7 @@ test("multi-writer fast-forward", async (t) => {
   const results = []
 
   for (let i = 0; i < RUNS; i++) {
-    const paras = await create(WRITERS + 1, t)
-    const reader = paras.pop()
+    const paras = await create(WRITERS, t)
     const done = replicate(...paras)
 
     await paras[0].exec(TABLE)
@@ -379,7 +380,15 @@ test("multi-writer fast-forward", async (t) => {
       await stmt.flush()
     }
 
+    await sync(...paras)
     await done()
+
+    const store = new Corestore(await t.tmp())
+    const reader = new ParaQL(store, paras[0].key)
+
+    await reader.ready()
+
+    t.teardown(() => reader.close())
 
     results.push(await t.execution(() => replicateAndSync(...paras, reader)))
   }
