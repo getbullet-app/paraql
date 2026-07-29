@@ -28,7 +28,10 @@
   ],
   "exports": {
     "./package": "./package.json",
-    ".": "./index.js"
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
   },
   "imports": {
     "buffer": {
