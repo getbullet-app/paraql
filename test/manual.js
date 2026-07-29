@@ -1,5 +1,5 @@
 const Corestore = require("corestore")
-const fs = require("bare-fs/promises")
+const fs = require("fs/promises")
 const tmp = require("test-tmp")
 
 const ParaQL = require("..")
@@ -8,19 +8,19 @@ const { INSERT, TABLE } = require("./helpers/constants")
 
 ;(async () => {
   const [data] = await inserts(1)
-  const [paraql] = await create(1)
+  const [paraql] = await create(1, null, { compressed: true })
 
   await paraql.exec(TABLE)
 
-  const stmt = await paraql.prepare(INSERT)
+  const insert = await paraql.prepare(INSERT)
 
-  stmt.batch(true)
+  insert.batch(true)
 
   for (const row of data) {
-    await stmt.run(...row)
+    await insert.run(...row)
   }
 
-  await stmt.flush()
+  console.log(await insert.flush())
 
   const info = await paraql.info()
 
@@ -29,6 +29,15 @@ const { INSERT, TABLE } = require("./helpers/constants")
   }
 
   console.log(info)
+
+  const select = await paraql.prepare("SELECT I, F1, F2 FROM pts1 ORDER BY I")
+  const rows = await select.all()
+
+  for (let i = 0; i < data.length; i++) {
+    if (rows[i].I !== data[i][0] || rows[i].F1 !== data[i][1] || rows[i].F2 !== data[i][2]) {
+      console.log(`FUCK ${i}`)
+    }
+  }
 
   await paraql.close()
 })()

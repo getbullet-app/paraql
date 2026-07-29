@@ -1,5 +1,5 @@
 const test = require("brittle")
-const Buffer = require("bare-buffer")
+const { Buffer } = require("buffer")
 
 const { create } = require("./helpers")
 

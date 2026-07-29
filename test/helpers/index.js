@@ -1,7 +1,7 @@
-const Buffer = require("bare-buffer")
+const { Buffer } = require("buffer")
 const Corestore = require("corestore")
-const fs = require("bare-fs/promises")
-const path = require("bare-path")
+const fs = require("fs/promises")
+const path = require("path")
 const tmp = require("test-tmp")
 
 const { BENCH_ROWS } = require("./constants")

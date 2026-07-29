@@ -9,8 +9,11 @@
     "url": "https://tomasrav.me/"
   },
   "license": "Apache-2.0",
+  "addon": true,
   "scripts": {
-    "test": "brittle-bare test/all.js",
+    "test": "npm run test:bare && npm run test:node",
+    "test:bare": "brittle-bare test/all.js",
+    "test:node": "brittle-node test/all.js",
     "test:manual": "bare test/manual.js",
     "bench": "brittle-bare test/bench.js"
   },
@@ -18,22 +21,38 @@
     "./package": "./package.json",
     ".": "./index.js"
   },
+  "imports": {
+    "buffer": {
+      "bare": "bare-buffer",
+      "default": "buffer"
+    },
+    "fs": {
+      "bare": "bare-fs",
+      "default": "fs"
+    },
+    "fs/promises": {
+      "bare": "bare-fs/promises",
+      "default": "fs/promises"
+    },
+    "path": {
+      "bare": "bare-path",
+      "default": "path"
+    },
+    "zlib": {
+      "bare": "bare-zlib",
+      "default": "zlib"
+    }
+  },
   "files": [
     "index.js",
     "binding.c",
     "binding.js",
     "CMakeLists.txt",
+    "NOTICE",
+    "cmake",
+    "lib",
     "prebuilds"
   ],
-  "addon": true,
-  "devDependencies": {
-    "brittle": "^4.0.2",
-    "cmake-bare": "^1.8.0",
-    "cmake-ports": "^1.10.0",
-    "corestore": "^7.11.0",
-    "prettier": "^3.9.4",
-    "test-tmp": "^1.4.0"
-  },
   "dependencies": {
     "autobee": "^1.0.10",
     "bare-buffer": "^3.6.2",
@@ -43,7 +62,19 @@
     "compact-encoding": "^3.3.0",
     "index-encoder": "^3.5.0",
     "ready-resource": "^1.2.0",
+    "require-addon": "^1.2.0",
     "rocksdb-native": "^3.17.2",
     "sodium-native": "^5.1.0"
+  },
+  "devDependencies": {
+    "bare-compat-napi": "^1.3.9",
+    "brittle": "^4.0.2",
+    "cmake-bare": "^1.8.0",
+    "cmake-napi": "^1.2.2",
+    "cmake-npm": "^1.1.2",
+    "cmake-ports": "^1.10.0",
+    "corestore": "^7.11.0",
+    "prettier": "^3.9.4",
+    "test-tmp": "^1.4.0"
   }
 }
