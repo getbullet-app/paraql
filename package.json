@@ -16,6 +16,16 @@
     "test:manual": "bare test/manual.js",
     "bench": "brittle-bare test/bench.js"
   },
+  "files": [
+    "index.js",
+    "binding.c",
+    "binding.js",
+    "CMakeLists.txt",
+    "NOTICE",
+    "cmake",
+    "lib",
+    "prebuilds"
+  ],
   "exports": {
     "./package": "./package.json",
     ".": "./index.js"
@@ -42,15 +52,21 @@
       "default": "zlib"
     }
   },
-  "files": [
-    "index.js",
-    "binding.c",
-    "binding.js",
-    "CMakeLists.txt",
-    "NOTICE",
-    "cmake",
-    "lib",
-    "prebuilds"
+  "homepage": "https://github.com/getbullet-app/paraql",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getbullet-app/paraql.git"
+  },
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/OzymandiasTheGreat"
+    }
+  ],
+  "keywords": [
+    "sql",
+    "autobase",
+    "vector-search"
   ],
   "dependencies": {
     "autobee": "^1.0.10",
