@@ -1,5 +1,13 @@
 # Benchmark
 
+The single-writer benchmarks show performance comparable or better to [vanilla SQLite](https://openbenchmarking.org/test/pts/sqlite).
+However this most likely due to the fact that our custom VFS performs more operations in memory and flushes to disk less often.
+
+The disk space requirements are also much larger, because deleted or overwritten data is actually kept on disk due to nature of append-only logs.
+The `paraql.compact()` method helps reclaim most of this space since most of the time it can be safely removed.
+
+The multi-writer benchmarks are a bit misleading since all instances are running on the same thread sequentially. The actual time taken can be derived by dividing times shown by number of instances (currently 3).
+
 ```
 # single-writer exec
     ok 1 - should resolve

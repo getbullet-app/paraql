@@ -1,8 +1,7 @@
 {
-  "private": true,
   "name": "paraql",
   "version": "0.0.1",
-  "description": "Autobased SQLite3 experiment",
+  "description": "Parallel multi-writer relational database with SQL syntax. Native support for encryption, compression, and vector search.",
   "author": {
     "name": "Tomas Ravinskas",
     "email": "tomas@tomasrav.me",
