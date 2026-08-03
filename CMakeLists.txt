@@ -10,8 +10,12 @@ project(paraql C)
 fetch_package(
   "github:tursodatabase/libsql@libsql-0.9.30"
   SOURCE_DIR libsql_src
-  BINARY_DIR libsql_bin
+  PATCHES "patches/libsql/makefile.patch"
 )
+
+set(sqlite3_src "${libsql_src}/libsql-sqlite3")
+set(sqlite3_c "${sqlite3_src}/sqlite3.c")
+set(sqlite3_h "${sqlite3_src}/sqlite3.h")
 
 if(CMAKE_HOST_WIN32)
   find_program(
@@ -21,9 +25,9 @@ if(CMAKE_HOST_WIN32)
   )
 
   add_custom_command(
-    OUTPUT ${libsql_bin}/sqlite3.c ${libsql_bin}/sqlite3.h
-    COMMAND ${make} /f ${libsql_src}/libsql-sqlite3/makefile.msc sqlite3.c
-    WORKING_DIRECTORY ${libsql_bin}
+    OUTPUT ${sqlite3_c} ${sqlite3_h}
+    COMMAND ${make} /f ${sqlite3_src}/makefile.msc sqlite3.c
+    WORKING_DIRECTORY ${sqlite3_src}
     VERBATIM
   )
 else()
@@ -40,26 +44,26 @@ else()
   )
   
   add_custom_command(
-    OUTPUT ${libsql_bin}/Makefile
-    COMMAND ${sh} ${libsql_src}/libsql-sqlite3/configure --enable-all
-    WORKING_DIRECTORY ${libsql_bin}
+    OUTPUT ${sqlite3_src}/Makefile
+    COMMAND ${sh} ${sqlite3_src}/configure --enable-all
+    WORKING_DIRECTORY ${sqlite3_src}
     VERBATIM
   )
   
   add_custom_command(
-    OUTPUT ${libsql_bin}/sqlite3.c ${libsql_bin}/sqlite3.h
+    OUTPUT ${sqlite3_c} ${sqlite3_h}
     COMMAND ${make} sqlite3.c
-    WORKING_DIRECTORY ${libsql_bin}
-    DEPENDS ${libsql_bin}/Makefile
+    WORKING_DIRECTORY ${sqlite3_src}
+    DEPENDS ${sqlite3_src}/Makefile
     VERBATIM
   )
 endif()
 
-add_library(libsql "${libsql_bin}/sqlite3.c")
+add_library(libsql "${sqlite3_c}")
 
 target_include_directories(
   libsql
-  INTERFACE "${libsql_bin}"
+  INTERFACE "${sqlite3_src}"
 )
 
 add_bare_module(paraql_bare)

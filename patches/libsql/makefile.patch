@@ -1,0 +1,47 @@
+﻿diff --git a/libsql-sqlite3/Makefile.msc b/libsql-sqlite3/Makefile.msc
+index aa371176d1..32d8ca1ff2 100644
+--- a/libsql-sqlite3/Makefile.msc
++++ b/libsql-sqlite3/Makefile.msc
+@@ -1398,6 +1398,16 @@ SRC01 = \
+   $(TOP)\src\vdbesort.c \
+   $(TOP)\src\vdbetrace.c \
+   $(TOP)\src\vdbevtab.c \
++	$(TOP)\src\vector.c \
++	$(TOP)\src\vectordiskann.c \
++	$(TOP)\src\vectorfloat1bit.c \
++	$(TOP)\src\vectorfloat8.c \
++	$(TOP)\src\vectorfloat16.c \
++	$(TOP)\src\vectorfloat32.c \
++	$(TOP)\src\vectorfloat64.c \
++	$(TOP)\src\vectorfloatb16.c \
++	$(TOP)\src\vectorIndex.c \
++	$(TOP)\src\vectorvtab.c \
+   $(TOP)\src\vtab.c \
+   $(TOP)\src\wal.c \
+   $(TOP)\src\walker.c \
+@@ -1428,6 +1438,7 @@ SRC04 = \
+ # Core header files, part 2.
+ #
+ SRC05 = \
++	$(TOP)\src\page_header.h \
+   $(TOP)\src\pager.h \
+   $(TOP)\src\pcache.h \
+   $(TOP)\src\pragma.h \
+@@ -1463,6 +1474,7 @@ SRC07 = \
+   $(TOP)\ext\rtree\rtree.c \
+   $(TOP)\ext\session\sqlite3session.c \
+   $(TOP)\ext\rbu\sqlite3rbu.c \
++	$(TOP)\ext\udf\wasmedge_bindings.c \
+   $(TOP)\ext\misc\stmt.c
+ 
+ # Extension header files, part 2.
+@@ -1476,7 +1488,8 @@ SRC09 = \
+   $(TOP)\ext\rtree\rtree.h \
+   $(TOP)\ext\rtree\geopoly.c \
+   $(TOP)\ext\rbu\sqlite3rbu.h \
+-  $(TOP)\ext\session\sqlite3session.h
++  $(TOP)\ext\session\sqlite3session.h \
++	$(TOP)\ext\udf\wasm_bindings.h
+ 
+ # Generated source code files
+ #
