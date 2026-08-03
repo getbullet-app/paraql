@@ -388,7 +388,10 @@ test("multi-writer fast-forward", async (t) => {
 
     await reader.ready()
 
-    t.teardown(() => reader.close())
+    t.teardown(async () => {
+      await reader.close()
+      await store.close()
+    })
 
     results.push(await t.execution(() => replicateAndSync(...paras, reader)))
   }

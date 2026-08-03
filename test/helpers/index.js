@@ -61,10 +61,16 @@ async function create(n, t, options = {}) {
     t = null
   }
 
+  const teardowns = []
   const store = new Corestore(await tmp(t))
   const paras = [new ParaQL(store, options)]
 
   await paras[0].ready()
+
+  teardowns.push(async () => {
+    await paras[0].close()
+    await store.close()
+  })
 
   for (let i = 1; i < n; i++) {
     const store = new Corestore(await tmp(t))
@@ -72,10 +78,15 @@ async function create(n, t, options = {}) {
 
     await paras[i].ready()
     await paras[0].addWriter(paras[i].local)
+
+    teardowns.push(async () => {
+      await paras[i].close()
+      await store.close()
+    })
   }
 
   t?.teardown(async () => {
-    for (const p of paras) await p.close()
+    for (const teardown of teardowns) await teardown()
   })
 
   return [...paras]
