@@ -26,8 +26,12 @@ jobs:
     name: Test / ${{ matrix.platform }}-${{ matrix.arch }}
     steps:
       - uses: holepunchto/actions/bare-base@v1
-      - run: choco upgrade llvm
+      - name: run Chocolatey
         if: ${{ matrix.platform == 'win32' }}
+        run: |
+          choco install magicsplat-tcl-tk -y --version=1.16.0
+          choco upgrade llvm
+          refreshenv
       - uses: holepunchto/actions/compile-prebuilds@v1
         with:
           platform: ${{ matrix.platform }}
