@@ -50,7 +50,7 @@ jobs:
           - os: windows-2022
             platform: win32
             arch: x64
-          - os: windows-2022
+          - os: windows-11-arm
             platform: win32
             arch: arm64
     runs-on: ${{ matrix.os }}
@@ -66,6 +66,8 @@ jobs:
           refreshenv
       - uses: ilammy/msvc-dev-cmd@v1
         if: ${{ matrix.platform == 'win32' }}
+        with:
+          arch: ${{ matrix.arch }}
       - uses: holepunchto/actions/compile-prebuilds@v1
         with:
           platform: ${{ matrix.platform }}
