@@ -36,7 +36,7 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         if: ${{ matrix.platform == 'win32' }}
         with:
-          arch: ${{ matrix.arch }}
+          arch: ${{ matrix.arch == 'arm64' && 'x64_arm64' || 'x64'  }}
       - uses: holepunchto/actions/compile-prebuilds@v1
         with:
           platform: ${{ matrix.platform }}
