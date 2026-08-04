@@ -13,7 +13,10 @@ test("writable", async (t) => {
 
   await c.ready()
 
-  t.teardown(() => c.close())
+  t.teardown(async () => {
+    await c.close()
+    await store.close()
+  })
 
   t.ok(a.writable)
   t.absent(b.writable)
@@ -33,7 +36,10 @@ test("replication", async (t) => {
   const store = new Corestore(await t.tmp())
   const b = new ParaQL(store, a.key)
 
-  t.teardown(() => b.close())
+  t.teardown(async () => {
+    await b.close()
+    await store.close()
+  })
 
   await b.ready()
 

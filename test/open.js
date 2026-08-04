@@ -10,6 +10,8 @@ test("open and close", async (t) => {
   const store = new Corestore(await t.tmp())
   const paraql = new ParaQL(store)
 
+  t.teardown(() => store.close())
+
   await t.execution(paraql.ready())
   t.ok(paraql.opened)
   await t.execution(paraql.close())
@@ -29,6 +31,8 @@ test("re-open empty", async (t) => {
 
   const store2 = new Corestore(path)
   const paraql2 = new ParaQL(store2)
+
+  t.teardown(() => store2.close())
 
   await t.execution(paraql2.ready())
   await t.execution(paraql2.close())
@@ -51,6 +55,8 @@ test("re-open non-empty", async (t) => {
 
   const store2 = new Corestore(path)
   const paraql2 = new ParaQL(store2)
+
+  t.teardown(() => store2.close())
 
   await t.execution(paraql2.ready())
   await t.execution(paraql2.close())
@@ -86,6 +92,11 @@ test("re-open replicated", async (t) => {
   const storeB2 = new Corestore(pathB)
   const paraqlA2 = new ParaQL(storeA2, key)
   const paraqlB2 = new ParaQL(storeB2, key)
+
+  t.teardown(async () => {
+    await storeA2.close()
+    await storeB2.close()
+  })
 
   await t.execution(paraqlA2.ready())
   await t.execution(paraqlB2.ready())
