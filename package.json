@@ -1,6 +1,6 @@
 {
   "name": "paraql",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Parallel multi-writer relational database with SQL syntax. Native support for encryption, compression, and vector search.",
   "author": {
     "name": "Tomas Ravinskas",
