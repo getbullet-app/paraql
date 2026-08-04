@@ -35,6 +35,8 @@ jobs:
           refreshenv
       - uses: ilammy/msvc-dev-cmd@v1
         if: ${{ matrix.platform == 'win32' }}
+        with:
+          arch: ${{ matrix.arch }}
       - uses: holepunchto/actions/compile-prebuilds@v1
         with:
           platform: ${{ matrix.platform }}
