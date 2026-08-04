@@ -62,6 +62,7 @@ jobs:
         run: |
           choco install magicsplat-tcl-tk -y --version=1.16.0
           choco upgrade llvm
+          Import-Module $env:ChocolateyInstall\helpers\chocolateyProfile.psm1
           refreshenv
       - uses: ilammy/msvc-dev-cmd@v1
         if: ${{ matrix.platform == 'win32' }}
